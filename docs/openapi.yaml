@@ -1,0 +1,86 @@
+openapi: 3.0.3
+info:
+  title: ARAVINDHA API Contracts
+  description: REST API specification for ARAVINDHA Disaster Intelligence Platform
+  version: 1.0.0
+paths:
+  /api/health:
+    get:
+      summary: Health check endpoint
+      responses:
+        '200':
+          description: System online
+  /api/field-reports:
+    get:
+      summary: Fetch geotagged field reports
+      responses:
+        '200':
+          description: List of field reports
+    post:
+      summary: Submit geotagged field report with photo
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                hazard_type:
+                  type: string
+                severity:
+                  type: string
+                description:
+                  type: string
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                photo:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Report created
+  /api/predict-risk:
+    post:
+      summary: Calculate risk score using ML model
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon, rainfall_mm, soil_moisture, landslide_history_count]
+              properties:
+                lat:
+                  type: number
+                lon:
+                  type: number
+                rainfall_mm:
+                  type: number
+                soil_moisture:
+                  type: number
+                landslide_history_count:
+                  type: integer
+      responses:
+        '200':
+          description: Risk score prediction result
+  /api/alerts/send-sms:
+    post:
+      summary: Send warning SMS broadcast
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipients, message]
+              properties:
+                recipients:
+                  type: array
+                  items:
+                    type: string
+                message:
+                  type: string
+      responses:
+        '200':
+          description: SMS delivery result

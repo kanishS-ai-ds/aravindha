@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ARAVINDHA — Mobile Field Reporter</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#1C2541">
+</head>
+<body>
+
+  <header class="pwa-header">
+    <div class="pwa-brand">
+      <span class="pwa-logo">▣</span>
+      <div class="pwa-title">
+        <h1>ARAVINDHA</h1>
+        <small>Field Reporter PWA</small>
+      </div>
+    </div>
+  </header>
+
+  <div id="offlineBanner" class="offline-banner">
+    <span id="networkText">Checking connectivity...</span>
+    <button id="retrySyncBtn" class="retry-btn">SYNC NOW</button>
+  </div>
+
+  <div class="container">
+    <form id="reportForm">
+      <div class="card">
+        <div class="card-title">1. Geotagged Photo Capture</div>
+        
+        <div class="camera-box" id="cameraBox">
+          <div id="cameraPrompt">
+            <div class="camera-icon">📷</div>
+            <strong>Tap to Open Camera / Upload Photo</strong>
+            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">Auto-embeds EXIF coordinates & timestamp</div>
+          </div>
+          <input type="file" id="photoInput" accept="image/*" capture="environment">
+          <img id="photoPreview" class="photo-preview" alt="Captured preview">
+        </div>
+
+        <div style="margin-top: 14px;">
+          <div class="gps-box">
+            <div>
+              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">AUTOMATIC GPS CO-ORDINATES</div>
+              <div id="gpsDisplay" class="gps-status">Locating position...</div>
+            </div>
+            <button type="button" id="refreshGpsBtn" class="gps-btn">🔄 Refresh GPS</button>
+          </div>
+        </div>
+
+        <div id="manualGpsBox" style="display: none; margin-top: 10px;">
+          <div style="display:flex; gap:10px;">
+            <div class="form-group" style="flex:1;">
+              <label>Latitude</label>
+              <input type="text" id="manualLat" placeholder="e.g. 26.1445">
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label>Longitude</label>
+              <input type="text" id="manualLon" placeholder="e.g. 91.7362">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">2. Incident Details</div>
+
+        <div class="form-group">
+          <label>Report Title / Location Name</label>
+          <input type="text" id="title" placeholder="e.g. Landslide near NH-27 Km 42" required>
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <div class="form-group" style="flex:1;">
+            <label>Hazard Type</label>
+            <select id="hazardType">
+              <option value="Landslide">Landslide</option>
+              <option value="Flash Flood">Flash Flood</option>
+              <option value="Infrastructure Damage">Infrastructure Damage</option>
+              <option value="Road Blockage">Road Blockage</option>
+              <option value="Other">Other Hazard</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="flex:1;">
+            <label>Severity Level</label>
+            <select id="severity">
+              <option value="LOW">LOW</option>
+              <option value="MODERATE" selected>MODERATE</option>
+              <option value="HIGH">HIGH</option>
+              <option value="SEVERE">SEVERE</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Field Observations / Description</label>
+          <textarea id="description" rows="3" placeholder="Describe soil displacement, slope failure, debris movement, or road disruption..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Officer Name / ID Token</label>
+          <input type="text" id="submitter" value="Officer R. Sharma (NER Taskforce)">
+        </div>
+      </div>
+
+      <button type="submit" class="submit-btn">Transmit Geotagged Report 📡</button>
+    </form>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="card-title">Offline Submission Queue</div>
+      <ul id="queueList" class="queue-list"></ul>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

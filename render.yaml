@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: aravindha-disaster-system
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm run render-build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SMS_PROVIDER
+        value: FAST2SMS
+      - key: FAST2SMS_API_KEY
+        value: h2ygMiY3TVuo6Ot7bNzlx9XwJjk15GnsBPvp8cIWa0AEeZSQFKjA1KHso6ldtXncL4TMPVpz9v5arIBZ
+      - key: TEXTBELT_API_KEY
+        value: 1a75c4bcd41424ec606937120cfa0b667afce79bS06jvxv5FsG7IMQz4xChYMPtU

@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  postgres-postgis:
+    image: postgis/postgis:16-3.4
+    container_name: aravindha-postgis
+    environment:
+      POSTGRES_USER: aravindha
+      POSTGRES_PASSWORD: aravindhapassword
+      POSTGRES_DB: aravindha
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aravindha -d aravindha"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: aravindha-ml-service
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+
+  node-api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: aravindha-node-api
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - POSTGRES_HOST=postgres-postgis
+      - POSTGRES_USER=aravindha
+      - POSTGRES_PASSWORD=aravindhapassword
+      - POSTGRES_DB=aravindha
+      - ML_SERVICE_URL=http://ml-service:8000
+    depends_on:
+      postgres-postgis:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+
+volumes:
+  pgdata:
