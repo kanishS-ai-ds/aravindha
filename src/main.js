@@ -2,6 +2,7 @@ import './style.css'
 import Chart from 'chart.js/auto'
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { REGIONAL_PRESETS } from './modules/landslide-simulation-engine.js'
 
 
 /* =========================================================
@@ -280,7 +281,6 @@ const app = document.querySelector('#app')
 
 
 app.innerHTML = `
-
 <div class="app-shell">
 
 
@@ -333,6 +333,24 @@ app.innerHTML = `
       >
         <span>⌖</span>
         <span>Risk Map</span>
+      </button>
+
+
+      <button
+        class="nav-item"
+        data-section="simulation"
+      >
+        <span>🌋</span>
+        <span>3D Simulation</span>
+      </button>
+
+
+      <button
+        class="nav-item"
+        data-section="video-studio"
+      >
+        <span>🎬</span>
+        <span>Video Studio</span>
       </button>
 
 
@@ -676,59 +694,76 @@ app.innerHTML = `
 
           </div>
 
-
-          <div class="map-controls">
-            <button class="map-mode active" data-map-mode="heatmap">🔥 LIVE HEATMAP</button>
-            <button class="map-mode" data-map-mode="roads">🛣️ HIGHWAYS</button>
-            <button class="map-mode" data-map-mode="landslides">🌋 LANDSLIDES</button>
-            <button class="map-mode" data-map-mode="floods">🌊 FLASH FLOODS</button>
-            <button class="map-mode" data-map-mode="satellite">🛰️ SATELLITE</button>
-            <button class="map-mode" data-map-mode="terrain">⛰️ 3D TERRAIN</button>
-            <button class="map-mode" data-map-mode="live">🌍 LIVE EARTH</button>
-          </div>
         </div>
 
         <div class="map-wrapper">
           <div id="gisMap"></div>
 
-          <div class="map-status-overlay" id="gisStatus">
-            🔥 MULTI-HAZARD HEATMAP ACTIVE • LIVE LANDSLIDES & FLASH FLOODS
+          <!-- 2D / 3D RISK HEATMAP PILL SWITCHER -->
+          <div class="sim-viewmode-pills" id="overviewViewmodePills">
+            <button class="viewmode-btn" data-overview-mode="2d">2D</button>
+            <button class="viewmode-btn active viewmode-heatmap-btn" data-overview-mode="heatmap3d" title="3D Topographic Risk Heatmap">
+              <span class="heatmap-btn-icon">🌋</span> 3D Risk Heatmap
+            </button>
           </div>
 
-          <!-- Heatmap Intensity Gradient Bar (Matching Reference) -->
-          <div class="heatmap-scale-bar">
-            <div style="font-weight:800; font-size:10px; display:flex; justify-content:space-between; align-items:center;">
-              <span>HAZARD RISK INTENSITY</span>
-              <span style="color:#ff1e1e; font-size:8px;">● LIVE</span>
-            </div>
-            <div class="heat-gradient-line"></div>
-            <div class="heat-labels">
-              <span>LOW</span>
-              <span>MOD</span>
-              <span>HIGH</span>
-              <span style="color:#ff4444;">SEVERE</span>
-              <span style="color:#ff0033;">CRITICAL</span>
-            </div>
-            <div class="map-layer-toggles">
-              <span class="layer-chip active" id="chipLandslides">🌋 Landslides</span>
-              <span class="layer-chip active" id="chipFloods">🌊 Flash Floods</span>
-              <span class="layer-chip active" id="chipHotspots">⭕ Hotspots</span>
-              <span class="layer-chip active" id="chipRoads">🛣️ Highways</span>
+          <!-- COMPASS NORTH WIDGET -->
+          <div class="sim-compass-widget" id="overviewCompassWidget" title="North orientation">
+            <div class="compass-circle">
+              <div class="compass-needle"></div>
+              <span class="compass-label">N</span>
             </div>
           </div>
 
-          <div class="map-legend">
-            <div class="legend-title">ACTIVE LAYERS</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ff1e1e; box-shadow:0 0 8px #ff1e1e;"></span> Severe Risk Hotspot</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ff7700;"></span> High Landslide Risk</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#00d0ff;"></span> Flash Flood Basin</div>
-            <div style="height:1px; background:rgba(255,255,255,0.08); margin:6px 0;"></div>
-            <div class="legend-item"><span class="legend-line" style="background:#22c55e; box-shadow:0 0 6px #22c55e;"></span> Passable Corridor</div>
-            <div class="legend-item"><span class="legend-line" style="background:#f59e0b; box-shadow:0 0 6px #f59e0b;"></span> Watch (Runoff/Slow)</div>
-            <div class="legend-item"><span class="legend-line" style="background:#ef4444; box-shadow:0 0 6px #ef4444;"></span> Caution (Slip Zone)</div>
-            <div style="height:1px; background:rgba(255,255,255,0.08); margin:6px 0;"></div>
-            <div class="legend-item"><span class="legend-dot earthquake-dot"></span> Earthquakes (USGS)</div>
+          <!-- SCALE BAR -->
+          <div class="sim-scalebar" id="overviewScalebar">
+            <div class="scale-ticks">
+              <span>0</span>
+              <span>250</span>
+              <span>500</span>
+              <span>1,000 m</span>
+            </div>
+            <div class="scale-line"></div>
           </div>
+
+          <!-- HYPSOMETRIC RISK COLORMAP LEGEND (3D Heatmap Mode) -->
+          <div class="sim-heatmap-legend" id="overviewHeatmapLegend">
+            <div class="heatmap-legend-title">
+              <span>Topographic Hazard Heatmap</span>
+              <span class="text-amber-400 font-mono text-xs" style="color:#f59e0b; font-family:monospace; font-size:10px;">FoS &lt; 1.0</span>
+            </div>
+            <div class="heatmap-legend-bar"></div>
+            <div class="heatmap-legend-labels">
+              <span>Valley (&lt;1000m)</span>
+              <span>Mid-Slope</span>
+              <span>Peak Crest (&gt;2400m)</span>
+            </div>
+          </div>
+
+          <!-- 3D BOUNDING COORDINATE COLLAR -->
+          <div class="sim-coord-collar" id="overviewCoordCollar">
+            <div class="collar-axis-lat" id="overviewCollarLat">
+              <span class="collar-tick">10°15' N</span>
+              <span class="collar-tick">10°14' N</span>
+              <span class="collar-tick">10°12' N</span>
+              <span class="collar-tick">10°10' N</span>
+            </div>
+            <div class="collar-axis-lon" id="overviewCollarLon">
+              <span class="collar-tick">76°44' E</span>
+              <span class="collar-tick">76°46' E</span>
+              <span class="collar-tick">76°47' E</span>
+              <span class="collar-tick">76°49' E</span>
+              <span class="collar-tick">76°50' E</span>
+            </div>
+          </div>
+
+          <!-- COORDINATE HUD -->
+          <div class="sim-coord-hud" id="overviewCoordHud">
+            Lat: <span class="coord-val">10.2147° N</span> &nbsp; Lon: <span class="coord-val">76.7843° E</span> &nbsp; Elev: <span class="coord-val">1,256 m</span>
+          </div>
+
+          <!-- PHYSICS DEBRIS PARTICLE CANVAS OVERLAY -->
+          <canvas id="overviewParticleCanvas" class="sim-particle-canvas" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5;"></canvas>
         </div>
       </div>
 
@@ -1123,6 +1158,9 @@ app.innerHTML = `
 
     </footer>
 
+    <section id="section-simulation" style="display: none; width: 100%; min-height: 100vh;"></section>
+
+    <section id="section-video-studio" style="display: none; width: 100%; min-height: 100vh;"></section>
 
   </main>
 
@@ -1151,8 +1189,11 @@ function updateGISStatus(text) {
 ========================================================= */
 
 function initMap() {
+  const container = document.getElementById('gisMap')
+  if (!container) return
 
-  map = new maplibregl.Map({
+  try {
+    map = new maplibregl.Map({
 
     container: 'gisMap',
 
@@ -1286,7 +1327,11 @@ function initMap() {
       addLandslideLayer()
       addHeatmapLayers()
       addRoadNetworkLayer()
-      setMapMode('heatmap')
+      addOverview3DHeatmapAndContours()
+      setupOverviewCoordHUD()
+      setupOverviewParticleSimulation()
+      setupOverviewModeButtons()
+      setMapMode('heatmap3d')
       loadNASAEvents()
       loadEarthquakes()
     }
@@ -1304,7 +1349,9 @@ function initMap() {
 
     }
   )
-
+  } catch (err) {
+    console.warn('MapLibre init postponed until view is displayed:', err)
+  }
 }
 
 
@@ -1728,17 +1775,27 @@ function addHeatmapLayers() {
     });
   }
 
-  // Hotspot Click Popup Handler
+  // Hotspot Click Popup Handler with Interactive 3D Physics Simulation Action
   map.on('click', 'hazard-hotspot-rings', (e) => {
     const props = e.features[0].properties;
     const isFlood = props.hazard_type === 'FLASH_FLOOD';
     const isMulti = props.hazard_type === 'MULTI_HAZARD';
     const badgeColor = props.risk_score >= 85 ? '#ff1e1e' : (props.risk_score >= 70 ? '#ff7700' : '#ffd000');
 
-    new maplibregl.Popup()
+    // Route geographic zone to corresponding 3D simulation model preset
+    let targetPreset = 'nilgiris';
+    if (props.state === 'Sikkim' || props.name.includes('Gangtok') || props.name.includes('Teesta') || props.name.includes('Mangan') || props.name.includes('Likhu')) {
+      targetPreset = 'sikkim';
+    } else if (props.state === 'Meghalaya' || props.state === 'Assam' || props.state === 'Arunachal Pradesh' || props.state === 'Nagaland' || props.state === 'Mizoram') {
+      targetPreset = 'meghalaya';
+    } else if (props.state === 'Kerala' || props.name.includes('Wayanad')) {
+      targetPreset = 'wayanad';
+    }
+
+    new maplibregl.Popup({ maxWidth: '320px' })
       .setLngLat(e.lngLat)
       .setHTML(`
-        <div style="font-family:inherit; min-width:210px;">
+        <div style="font-family:inherit; min-width:220px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <strong style="font-size:13px; color:#fff;">${props.name}</strong>
             <span style="background:${badgeColor}; color:#fff; font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px;">${props.risk_level}</span>
@@ -1752,9 +1809,78 @@ function addHeatmapLayers() {
             <div>💧 <strong>Soil Moisture Saturation:</strong> ${props.soil_saturation}</div>
             <div>⛰️ <strong>Slope Gradient:</strong> ${props.slope_deg}° ${props.river ? `| 🌊 ${props.river}` : ''}</div>
           </div>
-          <div style="font-size:10px; color:#ffdd88;">
+          <div style="font-size:10px; color:#ffdd88; margin-bottom:10px;">
             ⚠️ <em>${props.vulnerability}</em>
           </div>
+          <button 
+            id="btn-launch-sim-popup"
+            onclick="window.launch3DSimulationForZone('${targetPreset}', '${props.name.replace(/'/g, "\\'")}')"
+            style="width:100%; padding:9px 12px; background:linear-gradient(135deg, #0284c7, #0369a1); border:none; border-radius:6px; color:#fff; font-weight:800; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 12px rgba(2, 132, 199, 0.4); transition:all 0.2s;"
+          >
+            <span>▲</span> Launch 3D Physics Simulation
+          </button>
+          <button 
+            id="btn-focus-3d-popup"
+            onclick="window.focusOverview3DHeatmap([${e.lngLat.lng}, ${e.lngLat.lat}], '${props.name.replace(/'/g, "\\'")}')"
+            style="width:100%; margin-top:6px; padding:8px 12px; background:linear-gradient(135deg, #ea580c, #dc2626); border:none; border-radius:6px; color:#fff; font-weight:800; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 12px rgba(220, 38, 38, 0.4); transition:all 0.2s;"
+          >
+            <span>🌋</span> View in 3D Risk Heatmap
+          </button>
+        </div>
+      `)
+      .addTo(map);
+  });
+
+  window.launch3DSimulationForZone = function(presetKey, zoneName) {
+    const simNav = document.querySelector('[data-section="simulation"]');
+    if (simNav) simNav.click();
+
+    setTimeout(() => {
+      const simSelector = document.getElementById('sim-region-selector');
+      if (simSelector) {
+        simSelector.value = presetKey;
+        simSelector.dispatchEvent(new Event('change'));
+      }
+    }, 150);
+  };
+
+  window.launch3DSimulationForCoordinates = function(coords, name) {
+    const simNav = document.querySelector('[data-section="simulation"]');
+    if (simNav) simNav.click();
+
+    setTimeout(() => {
+      if (window.landslideDashboardInstance && window.landslideDashboardInstance.simView) {
+        window.landslideDashboardInstance.simView.focusHeatmapAtCoordinate(coords, { name });
+      }
+    }, 250);
+  };
+
+  // Click on ANY area on the overview map to generate 3D Topographic Risk Heatmap
+  map.on('click', (e) => {
+    const interactiveLayers = ['hazard-hotspot-rings', 'earthquake-layer', 'landslide-layer', 'highway-node-rings'];
+    const hits = map.queryRenderedFeatures(e.point, { layers: interactiveLayers.filter(id => map.getLayer(id)) });
+    if (hits && hits.length > 0) return;
+
+    const [lng, lat] = [e.lngLat.lng, e.lngLat.lat];
+    window.focusOverview3DHeatmap([lng, lat], `Point [${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E]`);
+
+    new maplibregl.Popup({ maxWidth: '300px', closeButton: true })
+      .setLngLat(e.lngLat)
+      .setHTML(`
+        <div style="font-family:inherit; min-width:210px; color:#f8fafc;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <strong style="font-size:12px; color:#fff;">🌋 3D Topographic Heatmap</strong>
+            <span style="background:rgba(239, 68, 68, 0.2); color:#f87171; border:1px solid rgba(239, 68, 68, 0.4); font-size:9px; font-weight:800; padding:2px 6px; border-radius:4px;">ACTIVE</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">
+            Coordinate: <strong>${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E</strong>
+          </div>
+          <button 
+            onclick="window.launch3DSimulationForCoordinates([${lng}, ${lat}], 'Custom Analysis Point')"
+            style="width:100%; padding:8px 10px; background:linear-gradient(135deg, #0284c7, #0369a1); border:none; border-radius:6px; color:#fff; font-weight:700; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 12px rgba(2, 132, 199, 0.4);"
+          >
+            <span>▲</span> Open in 3D Simulation Cockpit
+          </button>
         </div>
       `)
       .addTo(map);
@@ -2048,7 +2174,348 @@ function updateHazardLayerFilter() {
 }
 
 /* =========================================================
-   MAP MODE SWITCHER
+   MERGED 3D SIMULATION TOPOGRAPHIC MAP ENGINE
+========================================================= */
+
+let current3DFocusOrigin = [76.7843, 10.2147]; // Default to Nilgiris (matching reference Image 1)
+let overviewParticleCtx = null;
+let overviewParticles = [];
+let overviewPhysicsRunning = false;
+let overviewAnimFrameId = null;
+
+function generateHypsometricHeatmapCanvas() {
+  const SIZE = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d');
+
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+  const R = 460;
+
+  // 1. PRIMARY RADIAL GRADIENT (matching Image 1 color ramp: Crimson -> Orange -> Yellow -> Green -> Blue)
+  const mainGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+  mainGrad.addColorStop(0.00, 'rgba(200, 20, 20, 0.94)');
+  mainGrad.addColorStop(0.06, 'rgba(220, 38, 38, 0.90)');
+  mainGrad.addColorStop(0.12, 'rgba(239, 68, 40, 0.86)');
+  mainGrad.addColorStop(0.20, 'rgba(249, 115, 22, 0.80)');
+  mainGrad.addColorStop(0.28, 'rgba(251, 146, 60, 0.74)');
+  mainGrad.addColorStop(0.36, 'rgba(252, 211, 77, 0.68)');
+  mainGrad.addColorStop(0.44, 'rgba(250, 240, 55, 0.62)');
+  mainGrad.addColorStop(0.52, 'rgba(190, 235, 50, 0.55)');
+  mainGrad.addColorStop(0.60, 'rgba(74, 222, 128, 0.48)');
+  mainGrad.addColorStop(0.68, 'rgba(20, 184, 166, 0.40)');
+  mainGrad.addColorStop(0.75, 'rgba(6, 182, 212, 0.32)');
+  mainGrad.addColorStop(0.83, 'rgba(56, 189, 248, 0.22)');
+  mainGrad.addColorStop(0.90, 'rgba(59, 130, 246, 0.14)');
+  mainGrad.addColorStop(0.96, 'rgba(37, 99, 235, 0.06)');
+  mainGrad.addColorStop(1.00, 'rgba(0, 0, 0, 0.00)');
+
+  ctx.save();
+  ctx.scale(1.0, 0.82);
+  ctx.beginPath();
+  ctx.arc(cx, cy / 0.82, R, 0, Math.PI * 2);
+  ctx.fillStyle = mainGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // 2. CONCENTRIC ELLIPTICAL RING CONTOURS (Exact spacing matching Image 1)
+  const rings = [
+    { r: 28, lw: 2.2, color: 'rgba(255, 255, 255, 0.80)' },
+    { r: 52, lw: 1.8, color: 'rgba(255, 220, 160, 0.75)' },
+    { r: 78, lw: 1.8, color: 'rgba(255, 200, 60, 0.70)' },
+    { r: 105, lw: 1.6, color: 'rgba(220, 240, 50, 0.65)' },
+    { r: 132, lw: 1.6, color: 'rgba(130, 235, 90, 0.60)' },
+    { r: 160, lw: 1.4, color: 'rgba(60, 220, 160, 0.54)' },
+    { r: 188, lw: 1.4, color: 'rgba(30, 200, 210, 0.48)' },
+    { r: 215, lw: 1.2, color: 'rgba(50, 190, 240, 0.40)' },
+    { r: 242, lw: 1.2, color: 'rgba(80, 170, 255, 0.32)' },
+    { r: 268, lw: 1.0, color: 'rgba(100, 150, 255, 0.24)' },
+    { r: 294, lw: 1.0, color: 'rgba(110, 130, 255, 0.18)' },
+    { r: 320, lw: 0.8, color: 'rgba(120, 120, 250, 0.12)' },
+    { r: 346, lw: 0.8, color: 'rgba(130, 110, 240, 0.08)' },
+    { r: 372, lw: 0.6, color: 'rgba(140, 100, 230, 0.05)' }
+  ];
+
+  ctx.save();
+  ctx.scale(1.0, 0.82);
+  rings.forEach(ring => {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy / 0.82, ring.r, ring.r, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = ring.color;
+    ctx.lineWidth = ring.lw;
+    ctx.stroke();
+  });
+  ctx.restore();
+
+  // 3. INNER GLOW HOTSPOT
+  const coreGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 40);
+  coreGlow.addColorStop(0.0, 'rgba(255, 255, 255, 0.35)');
+  coreGlow.addColorStop(0.4, 'rgba(255, 100, 50, 0.18)');
+  coreGlow.addColorStop(1.0, 'rgba(0, 0, 0, 0.00)');
+  ctx.beginPath();
+  ctx.arc(cx, cy, 40, 0, Math.PI * 2);
+  ctx.fillStyle = coreGlow;
+  ctx.fill();
+
+  return canvas;
+}
+
+function generateHypsometricHeatmapDataURL() {
+  return generateHypsometricHeatmapCanvas().toDataURL();
+}
+
+function addOverview3DHeatmapAndContours() {
+  updateOverview3DHeatmapBounds(current3DFocusOrigin);
+  updateOverviewContourLines(current3DFocusOrigin);
+}
+
+function updateOverview3DHeatmapBounds(origin = current3DFocusOrigin) {
+  if (!map) return;
+  const [oLon, oLat] = origin;
+  const spanLon = 0.090;
+  const spanLat = 0.075;
+  const bounds = [
+    [oLon - spanLon / 2, oLat + spanLat / 2],
+    [oLon + spanLon / 2, oLat + spanLat / 2],
+    [oLon + spanLon / 2, oLat - spanLat / 2],
+    [oLon - spanLon / 2, oLat - spanLat / 2]
+  ];
+
+  const canvas = generateHypsometricHeatmapCanvas();
+
+  if (map.getSource('heatmap-3d-raster-src')) {
+    const src = map.getSource('heatmap-3d-raster-src');
+    src.updateImage({
+      image: canvas,
+      coordinates: bounds
+    });
+  } else {
+    map.addSource('heatmap-3d-raster-src', {
+      type: 'image',
+      url: canvas.toDataURL(),
+      coordinates: bounds
+    });
+
+    const src = map.getSource('heatmap-3d-raster-src');
+    if (src) {
+      src.updateImage({
+        image: canvas,
+        coordinates: bounds
+      });
+    }
+
+    map.addLayer({
+      id: 'heatmap-3d-raster-layer',
+      type: 'raster',
+      source: 'heatmap-3d-raster-src',
+      layout: { visibility: 'none' },
+      paint: {
+        'raster-opacity': 0.88,
+        'raster-fade-duration': 0
+      }
+    });
+  }
+  map.triggerRepaint();
+}
+
+function updateOverviewContourLines(center = current3DFocusOrigin) {
+  if (!map) return;
+  const [cLon, cLat] = center;
+  const contourFeatures = [
+    { elev: 1000, r: 0.024, label: '1000 m' },
+    { elev: 1200, r: 0.019, label: '1200 m' },
+    { elev: 1400, r: 0.014, label: '1400 m' },
+    { elev: 1600, r: 0.009, label: '1600 m' },
+    { elev: 1800, r: 0.004, label: '1800 m' }
+  ].map(item => {
+    const ring = [];
+    const numPts = 32;
+    for (let i = 0; i <= numPts; i++) {
+      const a = (i / numPts) * Math.PI * 2;
+      const warp = 1 + 0.25 * Math.sin(a * 3) + 0.15 * Math.cos(a * 5);
+      const lon = cLon + Math.cos(a) * item.r * warp * 1.3;
+      const lat = cLat + Math.sin(a) * item.r * warp * 0.8;
+      ring.push([lon, lat]);
+    }
+    return {
+      type: 'Feature',
+      properties: { elevation: item.elev, label: item.label },
+      geometry: { type: 'LineString', coordinates: ring }
+    };
+  });
+
+  const geo = {
+    type: 'FeatureCollection',
+    features: contourFeatures
+  };
+
+  if (map.getSource('contours-src')) {
+    map.getSource('contours-src').setData(geo);
+  } else {
+    map.addSource('contours-src', {
+      type: 'geojson',
+      data: geo
+    });
+
+    map.addLayer({
+      id: 'contours-line',
+      type: 'line',
+      source: 'contours-src',
+      layout: { visibility: 'none' },
+      paint: {
+        'line-color': 'rgba(148, 163, 184, 0.55)',
+        'line-width': 1.4,
+        'line-dasharray': [4, 3]
+      }
+    });
+  }
+}
+
+function updateOverviewCollarCoordinates(center = current3DFocusOrigin) {
+  const [cLon, cLat] = center;
+  const latEl = document.getElementById('overviewCollarLat');
+  const lonEl = document.getElementById('overviewCollarLon');
+
+  const formatCoord = (val, dir) => {
+    const deg = Math.floor(Math.abs(val));
+    const min = Math.round((Math.abs(val) - deg) * 60).toString().padStart(2, '0');
+    return `${deg}°${min}' ${dir}`;
+  };
+
+  if (latEl) {
+    latEl.innerHTML = `
+      <span class="collar-tick">${formatCoord(cLat + 0.04, 'N')}</span>
+      <span class="collar-tick">${formatCoord(cLat + 0.015, 'N')}</span>
+      <span class="collar-tick">${formatCoord(cLat - 0.015, 'N')}</span>
+      <span class="collar-tick">${formatCoord(cLat - 0.04, 'N')}</span>
+    `;
+  }
+
+  if (lonEl) {
+    lonEl.innerHTML = `
+      <span class="collar-tick">${formatCoord(cLon - 0.05, 'E')}</span>
+      <span class="collar-tick">${formatCoord(cLon - 0.025, 'E')}</span>
+      <span class="collar-tick">${formatCoord(cLon, 'E')}</span>
+      <span class="collar-tick">${formatCoord(cLon + 0.025, 'E')}</span>
+      <span class="collar-tick">${formatCoord(cLon + 0.05, 'E')}</span>
+    `;
+  }
+}
+
+function setupOverviewCoordHUD() {
+  const hudEl = document.getElementById('overviewCoordHud');
+  if (!hudEl || !map) return;
+
+  map.on('mousemove', e => {
+    const lat = e.lngLat.lat.toFixed(4);
+    const lon = e.lngLat.lng.toFixed(4);
+    const elev = Math.round(1256 + 400 * Math.sin(e.lngLat.lat * 100));
+    hudEl.innerHTML = `Lat: <span class="coord-val">${lat}° N</span> &nbsp; Lon: <span class="coord-val">${lon}° E</span> &nbsp; Elev: <span class="coord-val">${elev.toLocaleString()} m</span>`;
+  });
+}
+
+function setupOverviewParticleSimulation() {
+  const canvas = document.getElementById('overviewParticleCanvas');
+  if (!canvas || !map) return;
+  overviewParticleCtx = canvas.getContext('2d');
+
+  const resize = () => {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+  };
+  resize();
+  window.addEventListener('resize', resize);
+
+  overviewParticles = [];
+  for (let i = 0; i < 90; i++) {
+    overviewParticles.push({
+      t: Math.random(),
+      speed: 0.003 + Math.random() * 0.005,
+      lateralSpread: (Math.random() - 0.5) * 0.0028,
+      size: 1.5 + Math.random() * 3.5,
+      color: Math.random() > 0.65 ? '#ef4444' : Math.random() > 0.3 ? '#f97316' : '#eab308',
+      alpha: 0.6 + Math.random() * 0.4,
+      trail: []
+    });
+  }
+
+  const loop = () => {
+    if (overviewPhysicsRunning && overviewParticleCtx && map) {
+      overviewParticleCtx.clearRect(0, 0, canvas.width, canvas.height);
+      const origin = current3DFocusOrigin;
+      const toe = [origin[0] + 0.015, origin[1] - 0.013];
+      const originPix = map.project(origin);
+      const toePix = map.project(toe);
+      const dx = toePix.x - originPix.x;
+      const dy = toePix.y - originPix.y;
+
+      for (let i = 0; i < overviewParticles.length; i++) {
+        const p = overviewParticles[i];
+        p.t += p.speed;
+        if (p.t > 1.0) {
+          p.t = 0;
+          p.trail = [];
+          continue;
+        }
+        const curX = originPix.x + dx * p.t + p.lateralSpread * canvas.width * Math.sin(p.t * Math.PI);
+        const curY = originPix.y + dy * p.t + Math.pow(p.t, 1.3) * 10;
+
+        p.trail.push({ x: curX, y: curY });
+        if (p.trail.length > 4) p.trail.shift();
+
+        if (p.trail.length > 1) {
+          overviewParticleCtx.beginPath();
+          overviewParticleCtx.moveTo(p.trail[0].x, p.trail[0].y);
+          for (let j = 1; j < p.trail.length; j++) {
+            overviewParticleCtx.lineTo(p.trail[j].x, p.trail[j].y);
+          }
+          overviewParticleCtx.strokeStyle = p.color;
+          overviewParticleCtx.globalAlpha = p.alpha * 0.45;
+          overviewParticleCtx.lineWidth = p.size * 0.8;
+          overviewParticleCtx.stroke();
+        }
+
+        overviewParticleCtx.beginPath();
+        overviewParticleCtx.arc(curX, curY, p.size, 0, Math.PI * 2);
+        overviewParticleCtx.fillStyle = p.color;
+        overviewParticleCtx.globalAlpha = p.alpha;
+        overviewParticleCtx.fill();
+      }
+    } else if (overviewParticleCtx) {
+      overviewParticleCtx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    overviewAnimFrameId = requestAnimationFrame(loop);
+  };
+  if (overviewAnimFrameId) cancelAnimationFrame(overviewAnimFrameId);
+  overviewAnimFrameId = requestAnimationFrame(loop);
+}
+
+function setupOverviewModeButtons() {
+  document.querySelectorAll('#overviewViewmodePills .viewmode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.overviewMode;
+      setMapMode(mode);
+    });
+  });
+
+  document.getElementById('overviewCompassWidget')?.addEventListener('click', () => {
+    if (map) map.easeTo({ bearing: 0, duration: 600 });
+  });
+}
+
+window.focusOverview3DHeatmap = function(lngLat, name) {
+  if (Array.isArray(lngLat) && lngLat.length === 2) {
+    current3DFocusOrigin = lngLat;
+    setMapMode('heatmap3d');
+  }
+};
+
+/* =========================================================
+   MAP MODE SWITCHER (MERGED 2D & 3D MODES)
 ========================================================= */
 
 function setMapMode(mode) {
@@ -2076,57 +2543,103 @@ function setMapMode(mode) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
   });
 
-  map.setTerrain(null);
+  // Sync pill switcher buttons
+  document.querySelectorAll('#overviewViewmodePills .viewmode-btn').forEach(b => {
+    const bMode = b.dataset.overviewMode;
+    const isAct = bMode === mode || (mode === '2d' && bMode === '2d') || (mode === 'heatmap' && bMode === '2d');
+    b.classList.toggle('active', isAct);
+  });
 
-  if (mode === 'heatmap' || mode === 'risk') {
+  if (mode === 'heatmap3d') {
+    if (map.getLayer('satellite-layer')) {
+      map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
+      map.setPaintProperty('satellite-layer', 'raster-opacity', 1.0);
+    }
+    map.setTerrain({ source: 'terrain', exaggeration: 2.15 });
+
+    updateOverview3DHeatmapBounds(current3DFocusOrigin);
+    updateOverviewContourLines(current3DFocusOrigin);
+    updateOverviewCollarCoordinates(current3DFocusOrigin);
+
+    if (map.getLayer('heatmap-3d-raster-layer')) {
+      map.setLayoutProperty('heatmap-3d-raster-layer', 'visibility', 'visible');
+    }
+    if (map.getLayer('contours-line')) {
+      map.setLayoutProperty('contours-line', 'visibility', 'visible');
+    }
+
+    document.getElementById('overviewHeatmapLegend')?.classList.remove('hidden');
+    document.getElementById('overviewCoordCollar')?.classList.remove('hidden');
+    document.getElementById('overviewCompassWidget')?.classList.remove('hidden');
+    document.getElementById('overviewScalebar')?.classList.remove('hidden');
+    document.getElementById('overviewCoordHud')?.classList.remove('hidden');
+
+    overviewPhysicsRunning = true;
+
+    map.easeTo({
+      center: current3DFocusOrigin,
+      zoom: 13.8,
+      pitch: 65,
+      bearing: -22,
+      duration: 1200
+    });
+
+    updateGISStatus('🌋 3D TOPOGRAPHIC HAZARD HEATMAP • FOS < 1.0 ACTIVE');
+    return;
+  }
+
+  // Disable 3D Heatmap specific elements for other modes
+  if (map.getLayer('heatmap-3d-raster-layer')) {
+    map.setLayoutProperty('heatmap-3d-raster-layer', 'visibility', 'none');
+  }
+  document.getElementById('overviewHeatmapLegend')?.classList.add('hidden');
+  document.getElementById('overviewCoordCollar')?.classList.add('hidden');
+  overviewPhysicsRunning = false;
+
+  if (mode === 'terrain') {
+    if (map.getLayer('satellite-layer')) {
+      map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
+    }
+    map.setTerrain({ source: 'terrain', exaggeration: 2.0 });
+    updateOverviewContourLines(current3DFocusOrigin);
+    if (map.getLayer('contours-line')) {
+      map.setLayoutProperty('contours-line', 'visibility', 'visible');
+    }
+    document.getElementById('overviewCompassWidget')?.classList.remove('hidden');
+    document.getElementById('overviewScalebar')?.classList.remove('hidden');
+    document.getElementById('overviewCoordHud')?.classList.remove('hidden');
+    map.easeTo({ pitch: 58, bearing: -20, duration: 1000 });
+    updateGISStatus('⛰️ 3D TERRAIN • HAZARD ELEVATION RELIEF');
+    return;
+  }
+
+  if (mode === '3d') {
+    if (map.getLayer('satellite-layer')) {
+      map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
+    }
+    map.setTerrain({ source: 'terrain', exaggeration: 1.5 });
+    if (map.getLayer('contours-line')) {
+      map.setLayoutProperty('contours-line', 'visibility', 'none');
+    }
+    document.getElementById('overviewCompassWidget')?.classList.remove('hidden');
+    document.getElementById('overviewScalebar')?.classList.remove('hidden');
+    document.getElementById('overviewCoordHud')?.classList.remove('hidden');
+    map.easeTo({ pitch: 52, duration: 1000 });
+    updateGISStatus('⛰️ 3D SATELLITE PERSPECTIVE RELIEF');
+    return;
+  }
+
+  // 2D mode: reset terrain and pitch
+  map.setTerrain(null);
+  if (map.getLayer('contours-line')) {
+    map.setLayoutProperty('contours-line', 'visibility', 'none');
+  }
+
+  if (mode === '2d' || mode === 'heatmap' || mode === 'risk') {
     updateHazardSourceFilter('ALL');
     updateGISStatus('🔥 LIVE MULTI-HAZARD HEATMAP • LANDSLIDES & FLASH FLOODS');
     document.getElementById('chipLandslides')?.classList.add('active');
     document.getElementById('chipFloods')?.classList.add('active');
-  }
-
-  else if (mode === 'roads') {
-    updateGISStatus('🛣️ ROAD CONNECTIVITY ACTIVE • PASSABILITY & CAUTION SECTORS HIGHLIGHTED');
-    document.getElementById('chipRoads')?.classList.add('active');
-    map.flyTo({ center: [92.5, 25.5], zoom: 6.2, speed: 1.2 });
-  }
-
-  else if (mode === 'landslides') {
-    updateHazardSourceFilter('LANDSLIDE');
-    updateGISStatus('🌋 LANDSLIDE HAZARD HEATMAP • SLOPE SATURATION ZONES');
-    document.getElementById('chipLandslides')?.classList.add('active');
-    document.getElementById('chipFloods')?.classList.remove('active');
-  }
-
-  else if (mode === 'floods') {
-    updateHazardSourceFilter('FLASH_FLOOD');
-    updateGISStatus('🌊 FLASH FLOOD RISK HEATMAP • RIVER CATCHMENTS & LOWLANDS');
-    document.getElementById('chipLandslides')?.classList.remove('active');
-    document.getElementById('chipFloods')?.classList.add('active');
-  }
-
-  else if (mode === 'satellite') {
-    if (map.getLayer('satellite-layer')) {
-      map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
-    }
-    updateGISStatus('🛰️ SATELLITE WITH HAZARD OVERLAY • ESRI WORLD IMAGERY');
-  }
-
-  else if (mode === 'live') {
-    if (map.getLayer('nasa-live-layer')) {
-      map.setLayoutProperty('nasa-live-layer', 'visibility', 'visible');
-    }
-    updateGISStatus('🌍 NASA NEAR-REAL-TIME SATELLITE');
-  }
-
-  else if (mode === 'terrain') {
-    if (map.getLayer('satellite-layer')) {
-      map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
-    }
-    map.setTerrain({ source: 'terrain', exaggeration: 1.8 });
-    map.easeTo({ pitch: 55, duration: 1000 });
-    updateGISStatus('⛰️ 3D TERRAIN • HAZARD ELEVATION RELIEF');
-    return;
   }
 
   map.easeTo({ pitch: 0, duration: 700 });
@@ -2138,43 +2651,6 @@ function updateHazardSourceFilter(filter) {
     source.setData(getHazardGeoJson(filter));
   }
 }
-
-
-/* =========================================================
-   MAP BUTTON EVENTS
-========================================================= */
-
-document
-  .querySelectorAll('.map-mode')
-  .forEach(button => {
-
-    button.addEventListener(
-      'click',
-      () => {
-
-        document
-          .querySelectorAll('.map-mode')
-          .forEach(
-            item =>
-              item.classList.remove(
-                'active'
-              )
-          )
-
-
-        button.classList.add(
-          'active'
-        )
-
-
-        setMapMode(
-          button.dataset.mapMode
-        )
-
-      }
-    )
-
-  })
 
 
 /* =========================================================
@@ -4108,6 +4584,29 @@ document
           const section =
             button.dataset.section
 
+          if (section === 'simulation' || section === 'video-studio') {
+            document.querySelectorAll('.main-content > section:not(#section-simulation):not(#section-video-studio), .main-content > header, .main-content > div:not(#section-simulation):not(#section-video-studio), .main-content > footer').forEach(el => el.style.display = 'none');
+            const simEl = document.getElementById('section-simulation');
+            const vsEl = document.getElementById('section-video-studio');
+            if (section === 'simulation') {
+              if (simEl) simEl.style.display = 'block';
+              if (vsEl) vsEl.style.display = 'none';
+              if (window.landslideDashboardInstance && window.landslideDashboardInstance.simView && window.landslideDashboardInstance.simView.map) {
+                setTimeout(() => window.landslideDashboardInstance.simView.map.resize(), 100);
+              }
+            } else {
+              if (vsEl) vsEl.style.display = 'block';
+              if (simEl) simEl.style.display = 'none';
+              if (window.videoStudioInstance) window.videoStudioInstance.activate();
+            }
+            return;
+          } else {
+            document.querySelectorAll('.main-content > section:not(#section-simulation):not(#section-video-studio), .main-content > header, .main-content > div:not(#section-simulation):not(#section-video-studio), .main-content > footer').forEach(el => el.style.display = '');
+            const simEl = document.getElementById('section-simulation');
+            const vsEl = document.getElementById('section-video-studio');
+            if (simEl) simEl.style.display = 'none';
+            if (vsEl) vsEl.style.display = 'none';
+          }
 
           if (
             section ===
@@ -4332,6 +4831,8 @@ import { initAlerts } from './modules/alerts.js'
 import { initAnalytics } from './modules/analytics.js'
 import { initSensorsWebSocket } from './modules/sensors.js'
 import { initSettings } from './modules/settings.js'
+import { LandslideDashboardUI } from './modules/landslide-dashboard-ui.js'
+import { VideoStudioUI } from './modules/video-studio-ui.js'
 
 function initAllModules() {
   initFieldReports(typeof map !== 'undefined' ? map : null)
@@ -4339,6 +4840,28 @@ function initAllModules() {
   initAnalytics()
   initSensorsWebSocket()
   initSettings()
+
+  // Initialize Landslide 3D Simulation Cockpit
+  try {
+    const simDashboard = new LandslideDashboardUI('section-simulation')
+    simDashboard.mount()
+    window.landslideDashboardInstance = simDashboard
+
+    document.getElementById('launchSimBtn')?.addEventListener('click', () => {
+      document.querySelector('[data-section="simulation"]')?.click()
+    })
+  } catch (err) {
+    console.error('Error mounting Landslide Dashboard:', err)
+  }
+
+  // Initialize Disaster Video Studio (map selection → terrain → physics → cinematic video export)
+  try {
+    const videoStudio = new VideoStudioUI('section-video-studio')
+    videoStudio.mount()
+    window.videoStudioInstance = videoStudio
+  } catch (err) {
+    console.error('Error mounting Video Studio:', err)
+  }
 }
 
 if (document.readyState === 'loading') {
