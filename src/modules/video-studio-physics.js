@@ -345,17 +345,36 @@ function formatClock(seconds) {
  * Infinite-slope Factor of Safety with pore pressure + optional seismic
  * pseudostatic coefficient (Mohr-Coulomb).
  * FS = [c' + (σn - u) tanφ'] / [τ driving]
+ *
+ * Accuracy upgrade: soil properties are modulated by terrain convergence
+ * (specific catchment area). Real shallow landslides initiate in colluvial
+ * hollows — concave, water-converging slopes with deeper, wetter soil — not
+ * uniformly across the hillslope. Cells with high upslope contributing area
+ * get deeper soil, higher saturation and reduced cohesion; spur/convex cells
+ * keep thin, strong, dry soil. This spatially clusters failure at the
+ * topographic hollows instead of scattering it on every steep face.
  */
 export function computeFactorOfSafety(dem, slopes, opts = {}) {
   const res = dem.res
   const n = res * res
   const cohesion = (opts.cohesionKPa || 14) * 1000 // Pa
   const phi = ((opts.frictionAngle || 30) * Math.PI) / 180
-  const gammaDry = opts.soilUnitWeight || 17.5 // kN/m3 -> x1000 = N/m3
+  const gammaDry = opts.soilUnitWeight || 17.5 // kN/m3
   const gammaW = 9.81
   const soilDepth = opts.soilDepthMeters || 2.5
-  const saturation = Math.min(1, Math.max(0, (opts.saturationPct || 70) / 100))
-  const kh = opts.seismicKh || 0 // pseudostatic horizontal coefficient
+  const baseSaturation = Math.min(1, Math.max(0, (opts.saturationPct || 70) / 100))
+  const kh = opts.seismicKh || 0
+
+  // Terrain convergence from D8 flow accumulation (cheap, already used by
+  // the flood solver): normalised specific catchment area per cell.
+  const { accumulation } = computeFlowAccumulation(dem)
+  let accMax = 1
+  for (let i = 0; i < n; i++) if (accumulation[i] > accMax) accMax = accumulation[i]
+  const logAcc = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    // log-scale: 0 on ridges/spurs, ~1 in valley-head hollows and channels
+    logAcc[i] = Math.min(1, Math.log1p(accumulation[i]) / Math.log1p(accMax))
+  }
 
   const fs = new Float32Array(n)
   const tauDrive = new Float32Array(n)
@@ -363,14 +382,19 @@ export function computeFactorOfSafety(dem, slopes, opts = {}) {
 
   for (let i = 0; i < n; i++) {
     const beta = (Math.max(0.1, slopes[i]) * Math.PI) / 180
-    const zb = soilDepth
-    const zw = saturation * soilDepth
+    const conv = logAcc[i]
+    // Hollows: soil up to 1.6× deeper; spurs: as thin as 0.55×
+    const zb = soilDepth * (0.55 + 1.05 * conv)
+    // Convergent cells saturate faster as the shared water table rises
+    const sat = Math.min(1, baseSaturation * (0.75 + 0.5 * conv))
+    const zw = sat * zb
     const sigmaDry = gammaDry * 1000 * (zb - zw)
-    const sigmaSat = (gammaDry + 1.0) * 1000 * zw // approximate saturated add-on
+    const sigmaSat = (gammaDry + 1.0) * 1000 * zw
     const sigmaN = sigmaDry + sigmaSat
     const u = gammaW * 1000 * zw
+    // Roots/extra weathering in hollows lower effective cohesion ~30%
+    const cPrime = cohesion * (1 - 0.3 * conv)
     const sigmaEff = Math.max(0, sigmaN - u)
-    const cPrime = cohesion
     const strength = cPrime + sigmaEff * Math.tan(phi)
     const driving =
       (sigmaDry + sigmaSat) * Math.sin(beta) * Math.cos(beta) +
@@ -424,8 +448,17 @@ export function simulateLandslide(dem, slopes, fs, opts = {}) {
   const speed = new Float32Array(n)
   for (let i = 0; i < n; i++) h[i] = release[i] * (opts.sourceDepthMeters || 3.5)
 
-  const bedErosible = new Float32Array(n)
-  for (let i = 0; i < n; i++) bedErosible[i] = slopes[i] > 8 ? 0.6 + (slopes[i] / 60) : 0.1
+  // Bed entrainment: finite per-cell budget (Hungr & Evans style) — each cell
+  // can only contribute a limited depth of bed material before it is spent.
+  // (Previously entrainment had no memory, so a fast flow re-eroded the same
+  // cells every step and volumes grew without bound.)
+  const bedErosible0 = new Float32Array(n)
+  for (let i = 0; i < n; i++) bedErosible0[i] = slopes[i] > 8 ? 0.6 + slopes[i] / 60 : 0.1
+  const bedBudget = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    bedBudget[i] = slopes[i] > 8 ? 0.4 + slopes[i] / 45 : 0.08
+  }
+  const maxErodePerStep = Math.min(0.08, cell / 400)
 
   const frameHeights = []
   const frameSpeeds = []
@@ -449,58 +482,81 @@ export function simulateLandslide(dem, slopes, fs, opts = {}) {
     for (let s = 0; s < outEvery; s++) {
       simTime += dt
 
-      const fluxE = new Float32Array(n)
-      const fluxS = new Float32Array(n)
+      // Mass-conservative downhill transfer. (The previous version applied
+      // outflow with an inverted sign — donors GAINED the mass they sent and
+      // receivers were double-drained — so thickness diverged exponentially
+      // to Infinity within ~20 frames. This scheme moves a capped volume from
+      // each donor to its downhill neighbours; total mass is preserved and
+      // can only leave through the domain boundary.)
       const newH = new Float32Array(h)
+      const DX = [-1, 0, 1, -1, 1, -1, 0, 1]
+      const DY = [-1, -1, -1, 0, 0, 1, 1, 1]
+      const DIST = [Math.SQRT2, 1, Math.SQRT2, 1, 1, Math.SQRT2, 1, Math.SQRT2]
+      const donorFrac = 0.22 // max fraction of a cell's thickness moved per step
+      const drops = new Float32Array(8)
+      const idxs = new Int32Array(8)
 
       for (let y = 0; y < res; y++) {
         for (let x = 0; x < res; x++) {
           const i = y * res + x
-          if (h[i] <= 0.01 && speed[i] <= 0.01) continue
+          if (h[i] <= 0.01) continue
 
+          // Collect downhill neighbours (positive total-head drop)
+          let count = 0
+          let dropSum = 0
+          let steepest = 0
           for (let d = 0; d < 8; d++) {
-            const DX = [-1, 0, 1, -1, 1, -1, 0, 1]
-            const DY = [-1, -1, -1, 0, 0, 1, 1, 1]
             const nx = x + DX[d]
             const ny = y + DY[d]
             if (nx < 0 || ny < 0 || nx >= res || ny >= res) continue
             const ni = ny * res + nx
-            const dist = (d === 0 || d === 2 || d === 5 || d === 7) ? Math.SQRT2 : 1
-            const drop = h[i] + dem.heights[i] - (h[ni] + dem.heights[ni])
-            if (drop <= 0) continue
-            const slopeTan = drop / (cell * dist)
-            // Acceleration by gravity along slope, resisted by Voellmy friction
-            const accel = g * slopeTan
-            const fric = mu * g * Math.cos(Math.atan(slopeTan)) + (speed[i] * speed[i]) / Math.max(60, xi)
-            const vNew = Math.max(0, speed[i] + (accel - fric) * dt)
-            // Volume flux: thickness x width x velocity toward neighbor
-            const flux = (h[i] / 8) * Math.max(0, vNew) * dt / (cell * dist)
-            if (d === 1) fluxE[i] += flux // east
-            else if (d === 6) fluxE[ni] -= flux // west (negative incoming)
-            else if (d === 4) fluxS[i] += flux // south
-            else if (d === 3) fluxS[ni] -= flux // north
-            void dist
+            const drop = (h[i] + dem.heights[i]) - (h[ni] + dem.heights[ni])
+            if (drop > 0) {
+              drops[count] = drop
+              idxs[count] = ni
+              dropSum += drop
+              const sTan = drop / (cell * DIST[d])
+              if (sTan > steepest) steepest = sTan
+              count++
+            }
+          }
+          if (count === 0) continue
+
+          // Voellmy-Salm velocity along the steepest descent
+          const cosS = 1 / Math.sqrt(1 + steepest * steepest)
+          const fric = mu * g * cosS + (speed[i] * speed[i]) / Math.max(60, xi)
+          const accel = g * Math.min(steepest, 2.5)
+          const v = Math.max(0, speed[i] + (accel - fric) * dt)
+          const vOut = Math.min(v, (0.5 * cell) / dt) // CFL velocity cap
+
+          // Volume to distribute this step (thickness units), donor-capped
+          let totalFlux = h[i] * vOut * dt / cell
+          const cap = donorFrac * h[i]
+          if (totalFlux > cap) totalFlux = cap
+
+          // Split proportionally to head drop; donor loses exactly what
+          // receivers gain.
+          for (let k = 0; k < count; k++) {
+            const share = (drops[k] / dropSum) * totalFlux
+            newH[i] -= share
+            newH[idxs[k]] += share
           }
         }
       }
 
-      // Apply fluxes
+      // Entrainment (Hungr-Evans, dt-scaled) + finiteness guard
       for (let i = 0; i < n; i++) {
-        newH[i] = Math.max(0, h[i] + fluxE[i] + fluxS[i])
-      }
-
-      // Entrainment + deposition
-      for (let i = 0; i < n; i++) {
-        const v = speed[i]
-        if (newH[i] > 0.02 && v > 1.5) {
-          const eroded = Math.min(bedErosible[i] * entrainCoef * v * dt * 100, 0.15)
-          newH[i] += eroded
+        let hv = newH[i]
+        if (!Number.isFinite(hv)) hv = 0
+        hv = Math.max(0, hv)
+        if (hv > 0.02 && speed[i] > 1.5 && bedBudget[i] > 0) {
+          const want = bedErosible0[i] * entrainCoef * speed[i] * dt
+          const eroded = Math.min(want, maxErodePerStep, bedBudget[i])
+          hv += eroded
+          bedBudget[i] -= eroded
         }
-        const localSlope = slopes[i]
-        if (newH[i] > 0.02 && v < 0.4 && localSlope < stopSlope) {
-          // deposit settles
-        }
-        speed[i] = v * (newH[i] > 0.02 ? 1 : 0)
+        newH[i] = hv
+        speed[i] = Number.isFinite(speed[i]) ? speed[i] * (hv > 0.02 ? 1 : 0.85) : 0
       }
 
       // Speed update pass using local driving slope
@@ -511,11 +567,9 @@ export function simulateLandslide(dem, slopes, fs, opts = {}) {
             speed[i] *= 0.85
             continue
           }
-          const steepest = steepestDrop(dem.heights, res, x, y, cell)
-          const slopeTan = steepest
-          const accel = g * slopeTan
+          const slopeTan = steepestDrop(dem.heights, res, x, y, cell)
           const fric = mu * g * Math.cos(Math.atan(slopeTan)) + (speed[i] * speed[i]) / Math.max(60, xi)
-          speed[i] = Math.max(0, speed[i] + (accel - fric) * dt)
+          speed[i] = Math.max(0, speed[i] + (g * slopeTan - fric) * dt)
           if (slopeTan < Math.tan((stopSlope * Math.PI) / 180) && speed[i] < 0.6) {
             speed[i] = 0
           }

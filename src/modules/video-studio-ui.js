@@ -34,6 +34,7 @@ import {
   CAMERA_PATHS,
   INDIA_REGIONS
 } from './video-studio-renderer.js'
+import { SimViewer3D } from './sim-viewer-3d.js'
 
 const DEM_GRID_RES = 160
 const MAX_AREA_KM2 = 64
@@ -227,6 +228,7 @@ export class VideoStudioUI {
               </div>
 
               <div class="vs-cfg-row vs-checks">
+                <label class="vs-check"><input type="checkbox" id="vsInteractive3d" checked /> 🎮 Interactive 3D viewer (orbit the landslide yourself)</label>
                 <label class="vs-check"><input type="checkbox" id="vsOverlays" checked /> Data overlays (clock, metrics, impact)</label>
                 <label class="vs-check"><input type="checkbox" id="vsImagery" checked /> Satellite imagery drape</label>
               </div>
@@ -255,7 +257,55 @@ export class VideoStudioUI {
             <div class="vs-pstage" data-rstage="render"><span class="vs-ps-icon">🎬</span><div><strong>Cinematic Render</strong><em id="vsP-render">Waiting</em><div class="vs-ps-bar"><span id="vsB-render"></span></div></div></div>
             <div class="vs-pstage" data-rstage="export"><span class="vs-ps-icon">💾</span><div><strong>Video Encoding</strong><em id="vsP-export">Waiting</em><div class="vs-ps-bar"><span id="vsB-export"></span></div></div></div>
           </div>
-          <div class="vs-preview-wrap">
+          <!-- INTERACTIVE 3D VIEWER -->
+          <div class="vs-3d-panel" id="vs3dPanel" style="display:none">
+            <div class="vs-3d-head">
+              <div>
+                <div class="vstudio-kicker">INTERACTIVE 3D RECONSTRUCTION</div>
+                <h4>Real DEM terrain — drag to orbit, scroll to zoom, right-drag to pan</h4>
+              </div>
+              <div class="vs-3d-toolbar">
+                <button class="vs-3d-btn" id="vs3dPlay" title="Play / pause the landslide">⏸ Pause</button>
+                <button class="vs-3d-btn" id="vs3dRestart" title="Restart simulation">↺ Restart</button>
+                <select class="vs-3d-btn" id="vs3dSpeed" title="Playback speed">
+                  <option value="0.5">0.5×</option>
+                  <option value="1" selected>1×</option>
+                  <option value="2">2×</option>
+                  <option value="4">4×</option>
+                </select>
+                <span class="vs-3d-sep"></span>
+                <button class="vs-3d-btn" data-cam="iso" title="Isometric view">Perspective</button>
+                <button class="vs-3d-btn" data-cam="top" title="Top-down">Top</button>
+                <button class="vs-3d-btn" data-cam="side" title="Side profile">Side</button>
+                <span class="vs-3d-sep"></span>
+                <select class="vs-3d-btn" id="vs3dLight">
+                  <option value="storm">Monsoon light</option>
+                  <option value="day">Midday</option>
+                  <option value="dusk">Dusk</option>
+                  <option value="night">Night</option>
+                </select>
+                <select class="vs-3d-btn" id="vs3dWeather">
+                  <option value="rain">Rain</option>
+                  <option value="storm">Storm</option>
+                  <option value="clear">Clear</option>
+                </select>
+                <span class="vs-3d-sep"></span>
+                <label class="vs-3d-exag" title="Terrain vertical exaggeration">Relief ×<strong id="vs3dExagVal">1.4</strong>
+                  <input type="range" id="vs3dExag" min="8" max="30" value="14" />
+                </label>
+                <button class="vs-3d-btn vs-3d-record" id="vs3dRecord" title="Record exactly this camera view to a video">● Record View</button>
+              </div>
+            </div>
+            <div class="vs-3d-container" id="vs3dContainer"></div>
+            <div class="vs-3d-hud" id="vs3dHud">
+              <span class="chip">SIM TIME <strong id="vs3dHudTime">—</strong></span>
+              <span class="chip">RUNOUT <strong id="vs3dHudRunout">—</strong></span>
+              <span class="chip">PEAK SPEED <strong id="vs3dHudSpeed">—</strong></span>
+              <span class="chip">DEBRIS <strong id="vs3dHudFrame">—</strong></span>
+            </div>
+          </div>
+
+          <div class="vs-preview-wrap" id="vsPreviewWrap">
             <canvas id="vsPreviewCanvas" class="vs-preview"></canvas>
             <video id="vsPreviewVideo" class="vs-preview" controls style="display:none"></video>
           </div>
@@ -615,6 +665,7 @@ export class VideoStudioUI {
       terrainExaggeration: Number(document.getElementById('vsExag').value) / 10,
       showOverlays: document.getElementById('vsOverlays').checked,
       useImagery: document.getElementById('vsImagery').checked,
+      interactive3d: document.getElementById('vsInteractive3d')?.checked ?? false,
       fps: 30
     }
   }
@@ -663,6 +714,11 @@ export class VideoStudioUI {
   async runPipeline() {
     if (this.running || !this.selection) return
     this.running = true
+    // Tear down any previous interactive 3D session
+    if (this.viewer3d) {
+      this.viewer3d.dispose()
+      this.viewer3d = null
+    }
     this.activateRenderPanel()
     this.setStageRail('render')
 
@@ -708,6 +764,18 @@ export class VideoStudioUI {
       this.setStageUI('physics', 1, this.physicsSummary(config, simResult), 'done')
 
       const impacts = analyzeImpacts(simResult.stats, config.mode === 'flood' ? 'flood' : 'landslide', dem)
+
+      /* ---------- STAGE 3A: INTERACTIVE 3D VIEWER ---------- */
+      if (config.interactive3d) {
+        this.setStageUI('render', 0.3, 'Building interactive 3D terrain…', 'active')
+        await this.tick()
+        this.launchViewer3D(dem, this.drapeCanvas, simResult, config)
+        this.setStageUI('render', 1, 'Interactive 3D ready — orbit freely, then “Record View” to export', 'done')
+        this.setStageUI('export', 1, 'Press “Record View”, orbit through the landslide, stop — then download', 'done')
+        this.setStageRail('export')
+        this.renderImpactSummary(impacts, config, simResult)
+        return
+      }
 
       /* ---------- STAGE 3: CINEMATIC RENDER ---------- */
       this.setStageUI('render', 0.02, 'Building offscreen 3D terrain scene…', 'active')
@@ -783,6 +851,132 @@ export class VideoStudioUI {
 
   tick() {
     return new Promise(r => setTimeout(r, 30))
+  }
+
+  /* =========================================================
+     INTERACTIVE 3D VIEWER (Three.js, free orbit + record)
+  ========================================================= */
+
+  launchViewer3D(dem, drapeCanvas, simResult, config) {
+    const panel = document.getElementById('vs3dPanel')
+    const container = document.getElementById('vs3dContainer')
+    const previewWrap = document.getElementById('vsPreviewWrap')
+    if (!panel || !container) return
+    panel.style.display = 'block'
+    if (previewWrap) previewWrap.style.display = 'none'
+    container.innerHTML = ''
+
+    this.viewer3d = new SimViewer3D()
+    this.viewer3d.build(container, dem, drapeCanvas, {
+      verticalExaggeration: config.terrainExaggeration || 1.4,
+      lighting: config.lighting || 'storm',
+      weather: config.weather === 'clear' ? 'clear' : config.weather || 'rain'
+    })
+    this.viewer3d.attachSimulation(simResult, dem)
+    // Frame the default view on the failure zone for immediate impact
+    this.viewer3d.frameOnRelease()
+    this.viewer3d.play()
+
+    // HUD updates from the viewer loop
+    this.viewer3d.onStats = () => this.updateViewer3dHud()
+    this.bindViewer3dToolbar(config)
+
+    // Resize once laid out
+    setTimeout(() => this.viewer3d?._onResize(), 60)
+    this.setViewer3dPlaying(true)
+  }
+
+  bindViewer3dToolbar(config) {
+    const v = this.viewer3d
+    if (!v) return
+    const $ = id => document.getElementById(id)
+
+    $('vs3dPlay').onclick = () => {
+      v.toggle()
+      this.setViewer3dPlaying(v.playing)
+    }
+    $('vs3dRestart').onclick = () => {
+      v.reset()
+      v.play()
+      this.setViewer3dPlaying(true)
+    }
+    $('vs3dSpeed').onchange = e => v.setSpeed(Number(e.target.value))
+    document.querySelectorAll('#vs3dPanel [data-cam]').forEach(b => {
+      b.onclick = () => v.cameraPreset(b.dataset.cam)
+    })
+    $('vs3dLight').onchange = e => v.setLighting(e.target.value)
+    $('vs3dLight').value = config.lighting || 'storm'
+    $('vs3dWeather').onchange = e => v.setWeather(e.target.value)
+    $('vs3dWeather').value = config.weather === 'clear' ? 'clear' : 'rain'
+
+    const exag = $('vs3dExag')
+    exag.value = Math.round((config.terrainExaggeration || 1.4) * 10)
+    $('vs3dExagVal').textContent = (exag.value / 10).toFixed(1)
+    exag.oninput = () => {
+      $('vs3dExagVal').textContent = (exag.value / 10).toFixed(1)
+      v.setVerticalExaggeration(Number(exag.value) / 10)
+    }
+
+    $('vs3dRecord').onclick = () => this.toggleViewer3dRecording()
+  }
+
+  setViewer3dPlaying(playing) {
+    const btn = document.getElementById('vs3dPlay')
+    if (btn) btn.textContent = playing ? '⏸ Pause' : '▶ Play'
+  }
+
+  updateViewer3dHud() {
+    const v = this.viewer3d
+    if (!v) return
+    const hud = v.getHud()
+    const set = (id, val) => {
+      const el = document.getElementById(id)
+      if (el) el.textContent = val
+    }
+    set('vs3dHudTime', hud.tLabel || '—')
+    set('vs3dHudRunout', hud.runout != null ? `${Math.round(hud.runout)} m` : '—')
+    set('vs3dHudSpeed', hud.speed != null ? `${hud.speed.toFixed(1)} m/s` : '—')
+    set('vs3dHudFrame', `${Math.floor(v.frameIndex) + 1}/${v.frameCount || 0}`)
+  }
+
+  async toggleViewer3dRecording() {
+    const v = this.viewer3d
+    const btn = document.getElementById('vs3dRecord')
+    if (!v || !btn) return
+    if (!v.mediaRecorder) {
+      v.startRecording(30)
+      btn.textContent = '■ Stop Recording'
+      btn.classList.add('recording')
+      // force playback from start for a clean take
+      v.reset()
+      v.play()
+      this.setViewer3dPlaying(true)
+    } else {
+      btn.textContent = '● Record View'
+      btn.classList.remove('recording')
+      const result = await v.stopRecording()
+      if (result && result.blob.size > 0) {
+        // Reuse the standard export row for the user-captured video
+        this.resultBlob = result.blob
+        this.resultMime = result.mime
+        this.resultUrl = URL.createObjectURL(result.blob)
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+        this.downloadName = `aravindha-3d-interactive-${stamp}.${result.ext}`
+        const video = document.getElementById('vsPreviewVideo')
+        video.src = this.resultUrl
+        const wrap = document.getElementById('vsPreviewWrap')
+        if (wrap) {
+          wrap.style.display = 'block'
+          video.style.display = 'block'
+          document.getElementById('vsPreviewCanvas').style.display = 'none'
+          video.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }
+        document.getElementById('vsExportRow').style.display = 'flex'
+        document.getElementById('vsExportMeta').innerHTML =
+          `Your camera view • ${(result.blob.size / 1e6).toFixed(1)} MB • ${result.mime.split(';')[0]}`
+        this.setStageUI('export', 1, 'Recorded — ready to download', 'done')
+      }
+    }
   }
 
   /**

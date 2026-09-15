@@ -17,7 +17,7 @@
 ========================================================= */
 
 export const SATELLITE_TILE_URL =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}'
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 
 export const OSM_TILE_URL =
   'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -179,7 +179,10 @@ function decodeTerrariumPixel(data, i) {
  * Returns Float32Array heights (meters), row-major, origin = NW corner.
  */
 export async function fetchElevationGrid(bbox, gridRes, onProgress) {
-  const zoom = pickZoomForArea(bbox, 30, 13)
+  // z14 keeps ~10 m/px at mid-latitudes — noticeably crisper gullies and
+  // spur lines than z13, which smooths away the terrain features that
+  // control where landslides actually initiate.
+  const zoom = pickZoomForArea(bbox, 25, 14)
   const n = Math.pow(2, zoom)
   const x0 = Math.floor(MERCATOR.lonToX(bbox.minLon, zoom))
   const x1 = Math.floor(MERCATOR.lonToX(bbox.maxLon, zoom))
@@ -204,12 +207,30 @@ export async function fetchElevationGrid(bbox, gridRes, onProgress) {
   const heights = new Float32Array(gridRes * gridRes)
   for (let gy = 0; gy < gridRes; gy++) {
     const fy = pyTop + ((pyBottom - pyTop) * gy) / (gridRes - 1)
-    const py = Math.max(0, Math.min(pxH - 1, Math.round(fy)))
+    const pyf = Math.max(0, Math.min(pxH - 1.001, fy))
+    const py0 = Math.floor(pyf)
+    const py1 = Math.min(pxH - 1, py0 + 1)
+    const ty = pyf - py0
     for (let gx = 0; gx < gridRes; gx++) {
       const fx = pxLeft + ((pxRight - pxLeft) * gx) / (gridRes - 1)
-      const px = Math.max(0, Math.min(pxW - 1, Math.round(fx)))
-      const i = (py * pxW + px) * 4
-      heights[gy * gridRes + gx] = decodeTerrariumPixel(data, i)
+      const pxf = Math.max(0, Math.min(pxW - 1.001, fx))
+      const px0 = Math.floor(pxf)
+      const px1 = Math.min(pxW - 1, px0 + 1)
+      const tx = pxf - px0
+      // Bilinear sampling — nearest-neighbour produced stair-step slope
+      // artefacts that showed up as phantom failure strips on diagonal
+      // slopes.
+      const i00 = (py0 * pxW + px0) * 4
+      const i01 = (py0 * pxW + px1) * 4
+      const i10 = (py1 * pxW + px0) * 4
+      const i11 = (py1 * pxW + px1) * 4
+      const v00 = decodeTerrariumPixel(data, i00)
+      const v01 = decodeTerrariumPixel(data, i01)
+      const v10 = decodeTerrariumPixel(data, i10)
+      const v11 = decodeTerrariumPixel(data, i11)
+      const top = v00 + (v01 - v00) * tx
+      const bottom = v10 + (v11 - v10) * tx
+      heights[gy * gridRes + gx] = top + (bottom - top) * ty
     }
   }
 
