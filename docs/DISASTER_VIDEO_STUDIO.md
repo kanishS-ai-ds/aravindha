@@ -1,8 +1,32 @@
 # Disaster Video Studio — 3D Simulation Video Pipeline
 
 **Module:** ARAVINDHA Video Studio
-**Status:** Implemented (v1)
+**Status:** Implemented (v2 — India documentary edition)
 **Entry point:** Sidebar → **🎬 Video Studio** (`src/modules/video-studio-ui.js`)
+
+---
+
+## v2 additions — India hotspot catalog & documentary direction
+
+- **India region selector (Step 1):** 13 documented landslide zones in
+  `INDIA_REGIONS` — Wayanad, Kavalappara, Nilgiris, Idukki (Western Ghats),
+  Kedarnath, Joshimath (Uttarakhand), Manali, Kinnaur (Himachal), Darjeeling,
+  Gangtok (Eastern Himalaya), Cherrapunji (Meghalaya), Araku Valley (Eastern
+  Ghats), Nilambur. Selecting one flies the map to the district, adopts a
+  curated study bbox (auto-clamped ≤ 60 km²) and a geologic soil descriptor.
+- **Trigger mechanism (Step 2):** rainfall cloudburst / earthquake (kh=0.18
+  pseudostatic) / deforestation (root-cohesion loss) / construction (slope cut
+  + surcharge) / combined — each maps to distinct FoS & Voellmy parameters.
+- **Weather capture:** animated monsoon rain streaks, gusts and lightning
+  flashes composited over the 3D scene.
+- **Temporal progression:** documentary time-warp — slow pre-condition
+  monitoring → saturation build-up → catastrophic failure at ×0.25 slow-motion
+  → aftermath, with an on-screen PHASE badge.
+- **Science overlays:** slope (mean/max), factor of safety, soil composition,
+  trigger label, risk zoning (high/moderate/low %), evacuation route guidance,
+  plus the existing impact assessment panel.
+
+---
 
 ---
 

@@ -38,6 +38,68 @@ export const CAMERA_PATHS = {
 }
 
 /* =========================================================
+   INDIA LANDSLIDE-HOTSPOT CATALOG
+   Real landslide-prone zones across the Indian Himalaya, Western Ghats,
+   Eastern Ghats and Northeastern hill states. Every entry flies the selection
+   map to the district and offers a ready-to-run study area bbox.
+========================================================= */
+
+export const INDIA_REGIONS = [
+  { id: 'wayanad', name: 'Wayanad', district: 'Wayanad', state: 'Kerala', zone: 'Western Ghats',
+    center: [76.13, 11.52], zoom: 11.4,
+    bbox: { minLon: 76.09, minLat: 11.49, maxLon: 76.17, maxLat: 11.55 },
+    soil: 'Lateritic saprolite over charnockite', note: '2023 Meppadi–Chooralmala landslide corridor' },
+  { id: 'kavalappara', name: 'Kavalappara', district: 'Malappuram', state: 'Kerala', zone: 'Western Ghats',
+    center: [76.303, 11.302], zoom: 12.6,
+    bbox: { minLon: 76.27, minLat: 11.28, maxLon: 76.34, maxLat: 11.325 },
+    soil: 'Deep colluvium on garnet-biotite gneiss', note: '2019 Kavalappara hillside failure site' },
+  { id: 'nilgiris', name: 'Coonoor–Kotagiri', district: 'The Nilgiris', state: 'Tamil Nadu', zone: 'Western Ghats',
+    center: [76.75, 11.35], zoom: 11.8,
+    bbox: { minLon: 76.70, minLat: 11.31, maxLon: 76.80, maxLat: 11.39 },
+    soil: 'Red loam over chamockite; tea-estate terraces', note: 'Recurring monsoon slide belt (2019–2024)' },
+  { id: 'idukki', name: 'Munnar–Devikulam', district: 'Idukki', state: 'Kerala', zone: 'Western Ghats',
+    center: [77.06, 10.08], zoom: 11.8,
+    bbox: { minLon: 77.01, minLat: 10.04, maxLon: 77.11, maxLat: 10.12 },
+    soil: 'Gravelly clay loam on neogene plateau basalts', note: 'Tea-estate slope failures + 2018 monsoon' },
+  { id: 'kedarnath', name: 'Kedarnath Valley', district: 'Rudraprayag', state: 'Uttarakhand', zone: 'Garhwal Himalaya',
+    center: [79.06, 30.73], zoom: 11.6,
+    bbox: { minLon: 78.99, minLat: 30.68, maxLon: 79.13, maxLat: 30.78 },
+    soil: 'Glacial moraine & talus over phyllite', note: '2013 Kedarnath disaster / CH-1 corridor' },
+  { id: 'joshimath', name: 'Joshimath', district: 'Chamoli', state: 'Uttarakhand', zone: 'Garhwal Himalaya',
+    center: [79.558, 30.552], zoom: 12.8,
+    bbox: { minLon: 79.52, minLat: 30.53, maxLon: 79.60, maxLat: 30.575 },
+    soil: 'Landslide debris (Vishnuprayag) over quartzite', note: '2023 subsidence & slope-failure crisis zone' },
+  { id: 'manali', name: 'Manali–Kullu', district: 'Kullu', state: 'Himachal Pradesh', zone: 'Northwest Himalaya',
+    center: [77.17, 32.24], zoom: 11.8,
+    bbox: { minLon: 77.11, minLat: 32.19, maxLon: 77.23, maxLat: 32.29 },
+    soil: 'Outwash gravels & moraine over schist', note: '2023 monsoon flood-slide complex, NH-3' },
+  { id: 'kinnaur', name: 'Kinnaur Road Sector', district: 'Kinnaur', state: 'Himachal Pradesh', zone: 'Northwest Himalaya',
+    center: [78.42, 31.53], zoom: 12.0,
+    bbox: { minLon: 78.36, minLat: 31.49, maxLon: 78.48, maxLat: 31.57 },
+    soil: 'Schistose rock slopes with thick scree', note: 'Rockfall-debris chutes along NH-5' },
+  { id: 'darjeeling', name: 'Darjeeling–Kurseong', district: 'Darjeeling', state: 'West Bengal', zone: 'Eastern Himalaya',
+    center: [88.28, 26.88], zoom: 11.8,
+    bbox: { minLon: 88.23, minLat: 26.84, maxLon: 88.33, maxLat: 26.92 },
+    soil: 'Sandy loam over Daling schist; toy-train cuttings', note: '2015 cyclone-day slide cluster' },
+  { id: 'gangtok', name: 'Gangtok Periphery', district: 'Gangtok', state: 'Sikkim', zone: 'Eastern Himalaya',
+    center: [88.60, 27.33], zoom: 12.2,
+    bbox: { minLon: 88.55, minLat: 27.30, maxLon: 88.65, maxLat: 27.36 },
+    soil: 'Residual soil over Daling group schist', note: 'Steep urban slope belt, 2023 GLOF downstream' },
+  { id: 'cherrapunji', name: 'Cherrapunji Escarpment', district: 'East Khasi Hills', state: 'Meghalaya', zone: 'Northeast Hills',
+    center: [91.72, 25.28], zoom: 11.8,
+    bbox: { minLon: 91.67, minLat: 25.24, maxLon: 91.77, maxLat: 25.32 },
+    soil: 'Thin laterite over limestone plateau edge', note: 'Earth\'s wettest monsoon regime — extreme rainfall trigger' },
+  { id: 'araku', name: 'Araku Valley', district: 'Alluri Sitharama Raju', state: 'Andhra Pradesh', zone: 'Eastern Ghats',
+    center: [82.88, 18.32], zoom: 12.0,
+    bbox: { minLon: 82.83, minLat: 18.28, maxLon: 82.93, maxLat: 18.36 },
+    soil: 'Red sandy loam over khondalite', note: 'Cyclone-rain slides on valley head slopes' },
+  { id: 'nilambur', name: 'Nilambur – Karulai', district: 'Malappuram', state: 'Kerala', zone: 'Western Ghats',
+    center: [76.24, 11.23], zoom: 12.0,
+    bbox: { minLon: 76.20, minLat: 11.20, maxLon: 76.28, maxLat: 11.26 },
+    soil: 'Forest laterite on steep west-facing scarps', note: 'Landslide Atlas of India hot-spot block' }
+]
+
+/* =========================================================
    COLOR RAMPS
 ========================================================= */
 
@@ -55,6 +117,12 @@ const DEBRIS_RAMP = [
   [0.60, [88, 66, 44, 215]],
   [1.00, [46, 34, 26, 235]]
 ]
+
+/** Human label for the simulated weather window backing each phase. */
+function PHASE_LABELS(windowMin) {
+  const w = Math.round(windowMin || 60)
+  return `SIMULATED ${w} MIN RAINFALL WINDOW • DEM ${'30 m'} GRID`
+}
 
 function rampColor(stops, t) {
   t = Math.max(0, Math.min(1, t))
@@ -363,6 +431,22 @@ export class CinematicVideoRenderer {
   }
 
   /**
+   * Documentary pacing of wall time t∈[0,1]:
+   *   0.00–0.14  pre-condition monitoring (slow drift)
+   *   0.14–0.42  saturation builds (normal speed)
+   *   0.42–0.75  catastrophic failure — SLOW MOTION ×0.25
+   *   0.75–1.00  aftermath (normal → fast settle)
+   * Returns remapped time used for both camera and disaster-field indexing.
+   */
+  documentaryTime(t) {
+    const seg = (a, b, c, d, w) => c + ((t - a) / (b - a)) * (d - c) * w
+    if (t < 0.14) return seg(0, 0.14, 0, 0.14, 0.55) // slow pre-roll
+    if (t < 0.42) return 0.077 + seg(0.14, 0.42, 0, 0.345, 1) // normal
+    if (t < 0.75) return 0.422 + seg(0.42, 0.75, 0, 0.33, 0.25) // SLO-MO failure
+    return 0.5045 + seg(0.75, 1, 0, 0.4955, 1.35 > 1 ? 1 : 1) // aftermath
+  }
+
+  /**
    * Wait for the map to go idle, bounded by a timeout so an already-idle map
    * (or a zero-duration jump that emits no fresh idle event) can never hang.
    */
@@ -432,9 +516,11 @@ export class CinematicVideoRenderer {
   ========================================================= */
 
   drawOverlay(ctx, W, H, frameInfo) {
-    const { mode, simTimeLabel, stats, impacts, frameIdx, totalFrames, config, timeline } = frameInfo
+    const { mode, simTimeLabel, stats, impacts, frameIdx, totalFrames, config, timeline, tNorm = 0 } = frameInfo
 
     ctx.clearRect(0, 0, W, H)
+
+    this.drawPhaseBadge(ctx, W, H, tNorm)
 
     // Vignette
     const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, H * 0.85)
@@ -553,11 +639,107 @@ export class CinematicVideoRenderer {
       ctx.textAlign = 'left'
     }
 
+    // Scientific annotation panel (left bottom): slope, soil, trigger, risk,
+    // evacuation route — the "informational density" of the reference film.
+    if (config.showOverlays !== false && this.science) {
+      const s = this.science
+      const pw = Math.round(W * 0.26)
+      const ph = 176
+      const px = 24
+      const py = H - ph - 24
+      ctx.fillStyle = 'rgba(8, 12, 18, 0.78)'
+      ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 12); ctx.fill()
+      ctx.fillStyle = '#2fa8e0'
+      ctx.fillRect(px, py, 4, ph)
+      ctx.fillStyle = '#9fb0c0'
+      ctx.font = `800 ${Math.round(H * 0.014)}px Inter, sans-serif`
+      ctx.fillText('TERRAIN & TRIGGER ANALYSIS', px + 18, py + 20)
+      const rows = [
+        ['Slope (release zone)', `${s.meanSlope.toFixed(1)}° (max ${s.maxSlope.toFixed(0)}°)`],
+        ['Factor of safety', s.fosMin != null ? `${s.fosMin.toFixed(2)} ${s.fosMin < 1 ? '< 1.00 — FAILED' : '— stable'}` : 'n/a (flood mode)'],
+        ['Soil', s.soil],
+        ['Trigger', s.trigger],
+        ['Risk zoning', `High ${s.highPct}% • Mod ${s.modPct}% • Low ${s.lowPct}%`],
+        ['Evacuation route', s.evac]
+      ]
+      let ry = py + 44
+      for (const [k, v] of rows) {
+        ctx.fillStyle = '#71828f'
+        ctx.font = `600 ${Math.round(H * 0.0135)}px Inter, sans-serif`
+        ctx.fillText(k, px + 18, ry)
+        ctx.fillStyle = '#cfe0ef'
+        ctx.font = `700 ${Math.round(H * 0.0145)}px Inter, sans-serif`
+        ctx.fillText(v, px + 18, ry + 18)
+        ry += 37
+      }
+    }
+
     // Progress timeline strip
     ctx.fillStyle = 'rgba(255,255,255,0.12)'
     ctx.fillRect(0, H - 6, W, 6)
     ctx.fillStyle = mode === 'flood' ? '#2fa8e0' : '#c47a3a'
     ctx.fillRect(0, H - 6, (frameIdx / totalFrames) * W, 6)
+  }
+
+  /**
+   * Storm / rain weather pass — animated monsoon streaks + wind gusts over
+   * the composite. Pure canvas, ~0.4 ms/frame at 1080p.
+   */
+  drawWeather(ctx, W, H, frame, config, phase) {
+    if (config.weather === 'clear') return
+    const heavy = config.weather === 'storm'
+    const intensity = heavy ? 1 : 0.55
+    const t = frame * 0.9
+    ctx.save()
+    ctx.strokeStyle = `rgba(190, 205, 225, ${0.30 * intensity})`
+    ctx.lineWidth = Math.max(1, H / 900)
+    const drops = heavy ? 190 : 90
+    for (let i = 0; i < drops; i++) {
+      const seed = i * 2654435761 % 4294967296
+      const x = (seed % W + ((t * 7 + i) % W)) % W
+      const y = (seed % (H * 2) + t * 38) % H
+      const len = (heavy ? 26 : 16) + (i % 5) * 4
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x - len * 0.28, y + len)
+      ctx.stroke()
+    }
+    // gust sheen
+    ctx.fillStyle = `rgba(140, 160, 185, ${0.05 * intensity})`
+    ctx.fillRect(0, 0, W, H)
+    ctx.restore()
+    if (heavy) {
+      // lightning flash at phase boundaries
+      const flash = Math.max(0, 1 - ((frame % 45) / 6))
+      if (flash > 0.5) {
+        ctx.fillStyle = `rgba(235, 240, 255, ${(flash - 0.5) * 0.35})`
+        ctx.fillRect(0, 0, W, H)
+      }
+    }
+  }
+
+  /**
+   * Documentary PHASE badge — tells the story arc in broadcast style.
+   */
+  drawPhaseBadge(ctx, W, H, tNorm) {
+    const phase = PHASE_LABELS(this.phaseWindow)
+    const label = tNorm < 0.14 ? 'PHASE 0 — PRE-CONDITION MONITORING'
+      : tNorm < 0.42 ? 'PHASE 1 — SATURATION & WARNING (T−60 → T0)'
+      : tNorm < 0.75 ? 'PHASE 2 — CATASTROPHIC FAILURE (SLO-MO ×0.25)'
+      : 'PHASE 3 — AFTERMATH & IMPACT ASSESSMENT'
+    const sub = label.split('—')[0].trim()
+    const px = 24, py = 84
+    ctx.fillStyle = 'rgba(8, 12, 18, 0.66)'
+    ctx.beginPath(); ctx.roundRect(px, py, Math.max(280, W * 0.23), 54, 10); ctx.fill()
+    ctx.fillStyle = '#ff5544'
+    ctx.fillRect(px, py, 4, 54)
+    ctx.fillStyle = sub === 'PHASE 2' ? '#ffd166' : '#9fb0c0'
+    ctx.font = `800 ${Math.round(H * 0.016)}px Inter, sans-serif`
+    ctx.fillText(label, px + 16, py + 22)
+    ctx.fillStyle = '#71828f'
+    ctx.font = `600 ${Math.round(H * 0.013)}px Inter, sans-serif`
+    ctx.fillText(phase, px + 16, py + 42)
+    void sub
   }
 
   /* =========================================================
@@ -727,15 +909,19 @@ export class CinematicVideoRenderer {
     }
 
     /* ---- Cinematic frame loop ----------------------------------------- */
+    this.phaseWindow = config.durationMinutes || 60
     for (let frame = 0; frame < totalFrames; frame++) {
       if (this.abortRequested) break
 
       const t = frame / (totalFrames - 1)
-      const pose = this.cameraPose(cameraPath, t, this.bbox)
+      // Documentary pacing: slow-mo through the catastrophic failure window,
+      // gentle drift through pre-condition and aftermath segments.
+      const td = this.documentaryTime(t)
+      const pose = this.cameraPose(cameraPath, td, this.bbox)
       await this.applyCamera(pose)
 
-      // Advance disaster field
-      const fieldFrame = Math.min(framesInSim - 1, Math.floor(t * framesInSim))
+      // Advance disaster field on documentary timeline
+      const fieldFrame = Math.min(framesInSim - 1, Math.floor(td * framesInSim))
       if (frame % Math.max(1, Math.round(totalFrames / framesInSim / 2)) === 0 || frame === totalFrames - 1) {
         this.updateDrapeFrame(frameCanvases[fieldFrame])
         await this.mapIdle(4000)
@@ -753,7 +939,8 @@ export class CinematicVideoRenderer {
 
       this.drawOverlay(this.overlayCtx, W, H, {
         mode,
-        simTimeLabel: timeline?.elapsedLabel || formatClock(t * (mode === 'flood' ? (config.durationMinutes || 60) * 60 : (config.simSeconds || 90))),
+        tNorm: t,
+        simTimeLabel: timeline?.elapsedLabel || formatClock(td * (mode === 'flood' ? (config.durationMinutes || 60) * 60 : (config.simSeconds || 90))),
         stats: simResult.stats,
         impacts: this.impacts,
         frameIdx: frame,
@@ -761,7 +948,8 @@ export class CinematicVideoRenderer {
         config,
         timeline
       })
-      this.compositeCtx.drawImage(this.overlayCanvas, 0, 0)
+      if (config.showOverlays !== false) this.compositeCtx.drawImage(this.overlayCanvas, 0, 0)
+      this.drawWeather(this.compositeCtx, W, H, frame, config, null)
 
       await sink.writeFrame(this.compositeCanvas, frame)
 
@@ -770,12 +958,19 @@ export class CinematicVideoRenderer {
     }
 
     const result = await sink.finish()
+    this.destroyOffscreenSoon()
     // MediaRecorder blob carries the encoder mime; WebCodecs path already set it.
     return result
   }
 
+  destroyOffscreenSoon() {
+    clearTimeout(this.destroyTimer)
+    this.destroyTimer = setTimeout(() => this.destroy(), 10000)
+  }
+
   abort() {
     this.abortRequested = true
+    this.destroyOffscreenSoon()
   }
 
   destroy() {

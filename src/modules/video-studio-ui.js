@@ -31,7 +31,8 @@ import {
   CinematicVideoRenderer,
   RESOLUTIONS,
   LIGHTING_PRESETS,
-  CAMERA_PATHS
+  CAMERA_PATHS,
+  INDIA_REGIONS
 } from './video-studio-renderer.js'
 
 const DEM_GRID_RES = 160
@@ -106,6 +107,14 @@ export class VideoStudioUI {
                 <span class="dot sat"></span> Satellite imagery
               </div>
             </div>
+            <div class="vs-cfg-row" style="margin-top:10px">
+              <label>India Landslide Hotspots — fly to a documented failure zone</label>
+              <select id="vsRegion">
+                <option value="">— Choose a region / district —</option>
+                ${INDIA_REGIONS.map(r => `<option value="${r.id}">${r.name} — ${r.district}, ${r.state} (${r.zone})</option>`).join('')}
+              </select>
+              <div class="vs-region-note" id="vsRegionNote"></div>
+            </div>
             <div class="vs-selection-info" id="vsSelectionInfo">
               No area selected — use the drawing tools above, or
               <button class="vs-link" id="vsDemoAreaBtn">load a demo area (Wayanad)</button>
@@ -145,6 +154,26 @@ export class VideoStudioUI {
               <div class="vs-cfg-row">
                 <label>Soil Saturation <strong id="vsSatVal">80 %</strong></label>
                 <input type="range" id="vsSat" min="10" max="100" value="80" />
+              </div>
+
+              <div class="vs-cfg-row">
+                <label>Trigger Mechanism</label>
+                <select id="vsTrigger">
+                  <option value="rainfall" selected>Extreme rainfall (monsoon cloudburst)</option>
+                  <option value="earthquake">Earthquake shaking (M 5.5–6.5)</option>
+                  <option value="deforestation">Deforestation — loss of root cohesion</option>
+                  <option value="construction">Road cutting / construction loading</option>
+                  <option value="combined">Combined: rainfall + seismic + human</option>
+                </select>
+              </div>
+
+              <div class="vs-cfg-row">
+                <label>Weather During Capture</label>
+                <select id="vsWeather">
+                  <option value="storm" selected>Heavy monsoon storm + lightning</option>
+                  <option value="rain">Steady rainfall</option>
+                  <option value="clear">Clear skies (aftermath clarity)</option>
+                </select>
               </div>
 
               <div class="vs-cfg-row vs-inline">
@@ -468,14 +497,43 @@ export class VideoStudioUI {
   }
 
   loadDemoArea() {
-    this.selectionMap.jumpTo({ center: [76.13, 11.52], zoom: 12.2, pitch: 40 })
-    this.selection = {
-      type: 'bbox',
-      bbox: { minLon: 76.09, minLat: 11.49, maxLon: 76.17, maxLat: 11.55 }
+    this.applyRegion('wayanad')
+  }
+
+  /**
+   * Fly the selection map to a catalogued India landslide hotspot and adopt
+   * its curated study bbox as the selection.
+   */
+  applyRegion(regionId) {
+    const r = INDIA_REGIONS.find(x => x.id === regionId)
+    const note = document.getElementById('vsRegionNote')
+    if (!r) {
+      if (note) note.textContent = ''
+      return
     }
+    this.selectionMap.flyTo({ center: r.center, zoom: r.zoom, pitch: 48, duration: 1800 })
+    // Clamp curated bboxes to the DEM acquisition limit (≤ 60 km²) so every
+    // region entry is instantly runnable regardless of catalog size.
+    const bb = { ...r.bbox }
+    const wM = Math.abs(bb.maxLon - bb.minLon) * 111320 * Math.cos((r.center[1] * Math.PI) / 180)
+    const hM = Math.abs(bb.maxLat - bb.minLat) * 110540
+    const areaKm2 = (wM * hM) / 1e6
+    if (areaKm2 > 60) {
+      const f = Math.sqrt(60 / areaKm2)
+      const cl = (r.center[0] + bb.maxLon + bb.minLon) / 3
+      const ca = (r.center[1] + bb.maxLat + bb.minLat) / 3
+      bb.minLon = cl + (bb.minLon - cl) * f; bb.maxLon = cl + (bb.maxLon - cl) * f
+      bb.minLat = ca + (bb.minLat - ca) * f; bb.maxLat = ca + (bb.maxLat - ca) * f
+    }
+    this.selection = { type: 'bbox', bbox: bb, region: r }
     this.drawPoints = []
+    this.drawMode = 'bbox'
     this.redrawTemp()
     this.updateSelectionInfo()
+    if (note) {
+      note.innerHTML = `<strong>${r.name}, ${r.state}</strong> — ${r.soil}. ${r.note}.`
+      note.style.display = 'block'
+    }
   }
 
   setHint(text) {
@@ -533,6 +591,7 @@ export class VideoStudioUI {
       this.running = false
     })
     document.getElementById('vsDemoAreaBtn')?.addEventListener('click', () => this.loadDemoArea())
+    document.getElementById('vsRegion').addEventListener('change', e => this.applyRegion(e.target.value))
     document.getElementById('vsDownloadBtn').addEventListener('click', () => this.downloadResult())
   }
 
@@ -546,6 +605,8 @@ export class VideoStudioUI {
       rainfallMmPerHour: Number(document.getElementById('vsRainfall').value),
       durationMinutes: Number(document.getElementById('vsRainDur').value),
       saturationPct: Number(document.getElementById('vsSat').value),
+      trigger: document.getElementById('vsTrigger').value,
+      weather: document.getElementById('vsWeather').value,
       lighting: document.getElementById('vsLighting').value,
       cameraPath: document.getElementById('vsCamera').value,
       videoDurationSec: Number(document.getElementById('vsVideoLen').value),
@@ -606,6 +667,9 @@ export class VideoStudioUI {
     this.setStageRail('render')
 
     const config = this.readConfig()
+    config.locationName = this.selection?.region
+      ? `${this.selection.region.name} • ${this.selection.region.district}, ${this.selection.region.state}`
+      : 'Selected Area'
     const bbox = this.selection.bbox
     const dims = bboxDimensionsMeters(bbox)
 
@@ -640,37 +704,10 @@ export class VideoStudioUI {
       this.setStageUI('physics', 0.05, 'Pre-processing hydrology…', 'active')
       await this.tick()
 
-      let simResult
-      if (config.mode === 'flood') {
-        simResult = await simulateFlashFlood(dem, coverCodesFromCanvas(cover), {
-          rainfallMmPerHour: config.rainfallMmPerHour,
-          durationMinutes: config.durationMinutes,
-          outputFrames: 90
-        })
-      } else {
-        const { fs } = computeFactorOfSafety(dem, slopes, {
-          saturationPct: config.saturationPct,
-          cohesionKPa: 14,
-          frictionAngle: 30,
-          soilDepthMeters: 2.5,
-          seismicKh: 0
-        })
-        this.setStageUI('physics', 0.35, 'Factor-of-safety computed — running runout dynamics…', 'active')
-        await this.tick()
-        simResult = simulateLandslide(dem, slopes, fs, {
-          outputFrames: 90,
-          simSeconds: 90,
-          mu: 0.18,
-          xi: 450,
-          saturationPct: config.saturationPct
-        })
-      }
+      const simResult = await this.runPhysics(dem, slopes, cover, config)
+      this.setStageUI('physics', 1, this.physicsSummary(config, simResult), 'done')
+
       const impacts = analyzeImpacts(simResult.stats, config.mode === 'flood' ? 'flood' : 'landslide', dem)
-      this.setStageUI('physics', 1,
-        `Done — ${config.mode === 'flood'
-          ? `peak depth ${simResult.stats.maxDepth.toFixed(2)} m, ${simResult.stats.peakSpeed.toFixed(1)} m/s`
-          : `runout ${Math.round(simResult.stats.maxRunout)} m @ ${simResult.stats.peakSpeed.toFixed(1)} m/s`}`,
-        'done')
 
       /* ---------- STAGE 3: CINEMATIC RENDER ---------- */
       this.setStageUI('render', 0.02, 'Building offscreen 3D terrain scene…', 'active')
@@ -680,6 +717,7 @@ export class VideoStudioUI {
       await this.renderer.prepareDisasterDrape(simResult, config.mode === 'flood' ? 'flood' : 'landslide')
       this.renderer.impacts = impacts
       this.renderer.attachDrapeLayer()
+      this.renderer.science = this.buildSciencePanel(dem, slopes, this.lastFs, config, simResult)
       this.setStageUI('render', 0.25, 'Capturing cinematic frames…', 'active')
 
       const previewCanvas = document.getElementById('vsPreviewCanvas')
@@ -745,6 +783,106 @@ export class VideoStudioUI {
 
   tick() {
     return new Promise(r => setTimeout(r, 30))
+  }
+
+  /**
+   * Stage 2 orchestrator: factor-of-safety + runout (landslide) or
+   * diffusive-wave routing (flood), parameterised by the chosen trigger.
+   */
+  async runPhysics(dem, slopes, cover, config) {
+    if (config.mode === 'flood') {
+      return simulateFlashFlood(dem, coverCodesFromCanvas(cover), {
+        rainfallMmPerHour: config.rainfallMmPerHour,
+        durationMinutes: config.durationMinutes,
+        outputFrames: 90
+      })
+    }
+    const trig = this.triggerParams(config)
+    const { fs } = computeFactorOfSafety(dem, slopes, trig.fos)
+    this.lastFs = fs
+    this.setStageUI('physics', 0.35, 'Factor-of-safety computed — running runout dynamics…', 'active')
+    await this.tick()
+    return simulateLandslide(dem, slopes, fs, trig.runout)
+  }
+
+  /** Map the selected trigger to physics parameters + narrative label. */
+  triggerParams(config) {
+    const base = { saturationPct: config.saturationPct }
+    switch (config.trigger) {
+      case 'earthquake':
+        return {
+          fos: { ...base, cohesionKPa: 10, frictionAngle: 28, seismicKh: 0.18, soilDepthMeters: 2.5 },
+          runout: { ...base, outputFrames: 90, simSeconds: 90, mu: 0.12, xi: 700 },
+          label: 'M 6.0 seismic shaking (kh=0.18)'
+        }
+      case 'deforestation':
+        return {
+          fos: { ...base, cohesionKPa: 6, frictionAngle: 30, soilDepthMeters: 1.8 },
+          runout: { ...base, outputFrames: 90, simSeconds: 90, mu: 0.2, xi: 380 },
+          label: 'Root-cohesion loss after clearing'
+        }
+      case 'construction':
+        return {
+          fos: { ...base, cohesionKPa: 12, frictionAngle: 26, soilDepthMeters: 2.2 },
+          runout: { ...base, outputFrames: 90, simSeconds: 90, mu: 0.22, xi: 300 },
+          label: 'Slope cut + surcharge loading'
+        }
+      case 'combined':
+        return {
+          fos: { ...base, cohesionKPa: 8, frictionAngle: 27, seismicKh: 0.12, soilDepthMeters: 2.8 },
+          runout: { ...base, outputFrames: 90, simSeconds: 110, mu: 0.13, xi: 650 },
+          label: 'Rainfall + seismic + human activity'
+        }
+      case 'rainfall':
+      default:
+        return {
+          fos: { ...base, cohesionKPa: 14, frictionAngle: 30, soilDepthMeters: 2.5 },
+          runout: { ...base, outputFrames: 90, simSeconds: 90, mu: 0.16, xi: 500 },
+          label: `${config.rainfallMmPerHour} mm/h cloudburst, ${config.durationMinutes} min`
+        }
+    }
+  }
+
+  physicsSummary(config, simResult) {
+    return config.mode === 'flood'
+      ? `Done — peak depth ${simResult.stats.maxDepth.toFixed(2)} m, ${simResult.stats.peakSpeed.toFixed(1)} m/s`
+      : `Done — runout ${Math.round(simResult.stats.maxRunout)} m @ ${simResult.stats.peakSpeed.toFixed(1)} m/s`
+  }
+
+  /**
+   * Science annotations for the HUD: slopes, FoS, soil, trigger, risk zoning,
+   * evacuation routing — pulled from real DEM + the chosen scenario.
+   */
+  buildSciencePanel(dem, slopes, fs, config, simResult) {
+    const n = slopes.length
+    let sum = 0, maxSlope = 0, high = 0, mod = 0
+    for (let i = 0; i < n; i++) {
+      sum += slopes[i]
+      if (slopes[i] > maxSlope) maxSlope = slopes[i]
+      if (fs && fs[i] < 1) high++
+      else if (fs && fs[i] < 1.5) mod++
+    }
+    const highPct = Math.round((high / n) * 100)
+    const modPct = Math.round((mod / n) * 100)
+    const trig = this.triggerParams(config)
+    const region = this.selection?.region
+    const soil = region?.soil || 'Colluvial soil over bedrock (inferred)'
+    let fosMin = null
+    if (fs) {
+      fosMin = Infinity
+      for (let i = 0; i < Math.min(fs.length, 40000); i++) if (fs[i] < fosMin) fosMin = fs[i]
+    }
+    return {
+      meanSlope: sum / n,
+      maxSlope,
+      fosMin: Number.isFinite(fosMin) ? fosMin : null,
+      soil,
+      trigger: trig.label,
+      highPct,
+      modPct,
+      lowPct: Math.max(0, 100 - highPct - modPct),
+      evac: 'Uphill, perpendicular to the flow axis'
+    }
   }
 
   renderImpactSummary(impacts, config, simResult) {

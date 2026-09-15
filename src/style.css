@@ -3552,3 +3552,34 @@
   .vs-map-wrap { height: 340px; }
 }
 
+/* --- Video Studio additions: region picker, science/error boxes --- */
+#vsRegion,
+.vs-config select {
+  width: 100%;
+  background: var(--surface-2, #131a24);
+  color: var(--text, #dfe8f1);
+  border: 1px solid var(--border, #26313d);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.vs-region-note {
+  display: none;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted, #9fb0c0);
+}
+.vs-region-note strong { color: var(--text, #dfe8f1); }
+.vs-error-box {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid #7a2a24;
+  border-left: 4px solid #e8382f;
+  background: rgba(232, 56, 47, 0.08);
+  color: #ffb4ad;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
