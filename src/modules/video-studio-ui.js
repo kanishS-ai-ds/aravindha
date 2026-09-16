@@ -366,28 +366,83 @@ export class VideoStudioUI {
     this.selectionMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     this.selectionMap.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), 'bottom-left')
 
-    this.selectionMap.on('load', () => {
+    // Selection layers attach on style.load — NOT map 'load'. The load event
+    // waits for baseline imagery tiles, so on a slow/blocked network the
+    // highlight would never appear at all. style.load fires as soon as the
+    // style JSON is parsed; the idempotent guard survives re-fires.
+    const addDrawLayers = () => {
+      if (this.selectionMap.getSource('vs-draw')) {
+        this.tempSource = this.selectionMap.getSource('vs-draw')
+        return
+      }
       this.selectionMap.addSource('vs-draw', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
       })
+      // Selection visuals: translucent red fill (the area is *inside* the
+      // simulation), solid outline for the committed selection, dashed amber
+      // guide for the in-progress rubber band, and vertex dots.
       this.selectionMap.addLayer({
         id: 'vs-draw-fill',
         type: 'fill',
         source: 'vs-draw',
-        paint: { 'fill-color': '#e8382f', 'fill-opacity': 0.14 }
+        paint: { 'fill-color': '#ff3b30', 'fill-opacity': 0.22 }
       })
       this.selectionMap.addLayer({
         id: 'vs-draw-line',
         type: 'line',
         source: 'vs-draw',
-        paint: { 'line-color': '#ff5544', 'line-width': 2.4 }
+        filter: ['!=', ['get', 'temp'], true],
+        paint: { 'line-color': '#ff5544', 'line-width': 2.6 }
+      })
+      this.selectionMap.addLayer({
+        id: 'vs-draw-temp-line',
+        type: 'line',
+        source: 'vs-draw',
+        filter: ['==', ['get', 'temp'], true],
+        paint: { 'line-color': '#ffd166', 'line-width': 2, 'line-dasharray': [2, 1.6] }
+      })
+      this.selectionMap.addLayer({
+        id: 'vs-draw-vertex',
+        type: 'circle',
+        source: 'vs-draw',
+        filter: ['==', ['get', 'vertex'], true],
+        paint: {
+          'circle-radius': 5.5,
+          'circle-color': '#ff5544',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1.6
+        }
       })
       this.tempSource = this.selectionMap.getSource('vs-draw')
       this.redrawTemp()
+    }
+    this.selectionMap.on('style.load', addDrawLayers)
+    // Repaint whenever the selection source finishes processing an update
+    // (covers the async gap between setData and the worker's result).
+    this.selectionMap.on('sourcedata', e => {
+      if (e.sourceId === 'vs-draw' && e.isSourceLoaded !== false) this.selectionMap.triggerRepaint()
     })
 
     this.selectionMap.on('click', e => this.handleMapClick(e))
+    // Live rubber-band: while the user is mid-draw, keep a translucent
+    // preview of the final selection stretched between the first anchor
+    // (or polygon chain) and the cursor.
+    this.selectionMap.on('mousemove', e => {
+      this.hoverPoint = [e.lngLat.lng, e.lngLat.lat]
+      if (
+        (this.drawMode === 'bbox' && this.drawPoints.length === 1) ||
+        (this.drawMode === 'polygon' && this.drawPoints.length >= 1)
+      ) {
+        this.redrawTemp()
+      }
+    })
+    this.selectionMap.on('mouseout', () => {
+      if (this.hoverPoint) {
+        this.hoverPoint = null
+        this.redrawTemp()
+      }
+    })
     this.selectionMap.on('dblclick', () => {
       if (this.drawMode === 'polygon' && this.drawPoints.length >= 3) this.finalizeSelection()
     })
@@ -401,6 +456,7 @@ export class VideoStudioUI {
       this.drawPoints = []
       this.redrawTemp()
       this.updateSelectionInfo()
+      this.setHint('✓ Pin placed — drag the radius slider to resize')
       return
     }
     if (this.drawMode === 'bbox') {
@@ -415,8 +471,10 @@ export class VideoStudioUI {
             minLat: Math.min(a[1], b[1]), maxLat: Math.max(a[1], b[1])
           }
         }
+        this.hoverPoint = null
         this.redrawTemp()
         this.updateSelectionInfo()
+        this.setHint('✓ Area selected — drag the map to inspect, or re-click to redraw')
       } else {
         this.redrawTemp()
         this.setHint('Now click the opposite corner…')
@@ -431,9 +489,22 @@ export class VideoStudioUI {
   }
 
   redrawTemp() {
+    // Coalesce to one setData per animation frame: mousemove fires far faster
+    // than MapLibre's worker can consume updates, and dropped/raced worker
+    // updates could leave the selection stale.
+    if (this._redrawQueued) return
+    this._redrawQueued = true
+    requestAnimationFrame(() => {
+      this._redrawQueued = false
+      this._redrawTempNow()
+    })
+  }
+
+  _redrawTempNow() {
     if (!this.tempSource) return
     const features = []
 
+    // Committed selection: translucent red highlight + solid outline.
     if (this.selection && this.selection.bbox && this.drawMode !== 'polygon') {
       const b = this.selection.bbox
       features.push({
@@ -453,27 +524,55 @@ export class VideoStudioUI {
     }
 
     if (this.drawMode === 'pin' && this.selection?.pin) {
-      features.push({
-        type: 'Feature',
-        properties: {},
-        geometry: { type: 'Point', coordinates: this.selection.pin }
-      })
+      features.push(this.circleFeature(this.selection.pin, this.radiusM))
+      features.push({ type: 'Feature', properties: { vertex: true }, geometry: { type: 'Point', coordinates: this.selection.pin } })
     }
 
-    // In-progress polyline
-    if (this.drawPoints.length > 1) {
-      features.push({
-        type: 'Feature',
-        properties: { temp: true },
-        geometry: { type: 'LineString', coordinates: this.drawPoints }
-      })
+    // In-progress drawing: dashed amber guide, live rubber-band preview
+    // stretched to the cursor, and a dot on every placed anchor.
+    const hover = this.hoverPoint
+    if (this.drawMode === 'bbox' && this.drawPoints.length === 1) {
+      features.push({ type: 'Feature', properties: { vertex: true }, geometry: { type: 'Point', coordinates: this.drawPoints[0] } })
+      if (hover) {
+        const [a] = this.drawPoints
+        const box = {
+          minLon: Math.min(a[0], hover[0]), maxLon: Math.max(a[0], hover[0]),
+          minLat: Math.min(a[1], hover[1]), maxLat: Math.max(a[1], hover[1])
+        }
+        features.push({
+          type: 'Feature',
+          properties: { temp: true },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[
+              [box.minLon, box.minLat], [box.maxLon, box.minLat],
+              [box.maxLon, box.maxLat], [box.minLon, box.maxLat], [box.minLon, box.minLat]
+            ]]
+          }
+        })
+      }
+    }
+    if (this.drawMode === 'polygon' && this.drawPoints.length >= 1) {
+      const line = hover ? [...this.drawPoints, hover] : [...this.drawPoints]
+      if (line.length >= 2) {
+        features.push({ type: 'Feature', properties: { temp: true }, geometry: { type: 'LineString', coordinates: line } })
+      }
+      for (const p of this.drawPoints) {
+        features.push({ type: 'Feature', properties: { vertex: true }, geometry: { type: 'Point', coordinates: p } })
+      }
     }
     if (this.drawMode === 'pin' && this.drawPoints.length === 1) {
       // radius preview circle
       features.push(this.circleFeature(this.drawPoints[0], this.radiusM))
+      features.push({ type: 'Feature', properties: { vertex: true }, geometry: { type: 'Point', coordinates: this.drawPoints[0] } })
     }
 
     this.tempSource.setData({ type: 'FeatureCollection', features })
+    // Force repaints: setData is async (worker round-trip), so repaint once
+    // now AND again when the processed data actually lands — with a slow or
+    // stalled tile network the map otherwise idles and the new selection
+    // never reaches a painted frame.
+    this.selectionMap?.triggerRepaint()
   }
 
   circleFeature([lon, lat], radiusM) {
@@ -484,7 +583,9 @@ export class VideoStudioUI {
       const dLon = (radiusM * Math.sin(ang)) / (111320 * Math.cos((lat * Math.PI) / 180))
       pts.push([lon + dLon, lat + dLat])
     }
-    return { type: 'Feature', properties: { circle: true }, geometry: { type: 'LineString', coordinates: pts } }
+    // Closed ring → the translucent fill shows the radius area, the line
+    // layer draws its outline.
+    return { type: 'Feature', properties: { circle: true }, geometry: { type: 'Polygon', coordinates: [pts] } }
   }
 
   finalizeSelection() {
@@ -541,6 +642,7 @@ export class VideoStudioUI {
   clearSelection() {
     this.selection = null
     this.drawPoints = []
+    this.hoverPoint = null
     this.redrawTemp()
     this.updateSelectionInfo()
     this.setHint('Click two opposite corners to draw the analysis box')
@@ -602,6 +704,7 @@ export class VideoStudioUI {
         b.classList.add('active')
         this.drawMode = b.dataset.draw
         this.drawPoints = []
+        this.hoverPoint = null
         if (this.drawMode !== 'polygon' && this.selection?.type === 'polygon') this.selection = null
         this.redrawTemp()
         this.updateSelectionInfo()

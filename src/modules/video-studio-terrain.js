@@ -234,7 +234,10 @@ export async function fetchElevationGrid(bbox, gridRes, onProgress) {
     }
   }
 
-  // Fill any voids (ocean tiles decode to -32768 clusters; mask them to 0)
+  // Voids: ocean tiles decode to -32768 clusters. In coastal scenes the
+  // correct fill is sea level (0 m); inland, voids must become the local
+  // land elevation — writing 0 m carves giant flat craters that read as
+  // "incomplete terrain" (sheared cliffs and pits in the 3D mesh).
   let validSum = 0
   let validCount = 0
   for (let i = 0; i < heights.length; i++) {
@@ -244,8 +247,9 @@ export async function fetchElevationGrid(bbox, gridRes, onProgress) {
     }
   }
   const fillValue = validCount > 0 ? validSum / validCount : 0
+  const inland = fillValue > 40 // mean land elevation says this is not a coastal scene
   for (let i = 0; i < heights.length; i++) {
-    if (heights[i] <= -1000) heights[i] = 0
+    if (heights[i] <= -1000) heights[i] = inland ? fillValue : 0
   }
 
   return {

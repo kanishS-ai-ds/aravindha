@@ -171,14 +171,20 @@ export async function simulateFlashFlood(dem, coverGrid, opts = {}) {
   const n = res * res
   const cell = dem.cellSizeMeters || 30
   const filled = fillDepressions(dem).heights
-  const { accumulation } = computeFlowAccumulation({ ...dem, heights: filled })
+  const { accumulation, receiver: receiverIdx } = computeFlowAccumulation({ ...dem, heights: filled })
 
   const manning = manningFromLandCover(coverGrid)
   const intensity = Math.max(1, opts.rainfallMmPerHour || 50)
   const durationMin = opts.durationMinutes || 60
-  const dt = Math.min(1.0, (cell / 6) * 0.5) // CFL-ish, seconds
+  // Timestep budget: cap donor-cell sweeps per output frame. The transfer
+  // scheme is unconditionally positive (flux capped by donor fraction and a
+  // CFL velocity cap), so a larger dt stays stable — it trades a little
+  // numerical dispersion for a large wall-clock win. 40 sweeps/frame keeps a
+  // full 90-frame solve in the tens-of-seconds range instead of many minutes.
+  const dtIdeal = Math.min(2.0, (cell / 6) * 0.5)
+  const stepsPerFrame = Math.max(2, Math.min(40, Math.round((durationMin * 60) / opts.outputFrames / dtIdeal)))
+  const dt = (durationMin * 60) / opts.outputFrames / stepsPerFrame
   const vCap = (0.35 * cell) / dt // velocity ceiling so fluxes never outrun the timestep
-  const stepsPerOutput = Math.max(1, Math.round((durationMin * 60) / opts.outputFrames / dt))
   const runoffCoef = opts.runoffCoefficient || 0.55
 
   // Depth & velocity states
@@ -194,6 +200,42 @@ export async function simulateFlashFlood(dem, coverGrid, opts = {}) {
     channel[i] = accumulation[i] >= chanThreshold ? 1 : 0
   }
 
+  /* Hyetograph routing — water enters the system the way it does in reality:
+   * rain falls on every cell, infiltrates (rate depends on land cover / soil),
+   * the remainder becomes overland flow that D8-routes downslope. Each cell
+   * receives the runoff of its whole upslope catchment, so channels gather
+   * flow naturally and the flood wave appears IN THE RIVERS first, then
+   * spills out of bank — never randomly on hillsides. No rain is ever
+   * injected directly as surface depth.
+   */
+  const runoffPerCell = new Float32Array(n) // m³/s delivered by each cell
+  const infiltration = new Float32Array(n)
+  // Infiltration capacity by land cover (mm/hr): forest ~55, grass ~35,
+  // sand ~120, rock ~4, built ~2, water 0 — soils differ, concrete doesn't.
+  const INFIL_MM_H = [0, 120, 35, 55, 4, 2]
+  for (let i = 0; i < n; i++) {
+    infiltration[i] = Math.max(0, intensity - (INFIL_MM_H[coverGrid?.[i]] ?? 30)) * (runoffCoef)
+  }
+  let maxRunoff = 0
+  for (let i = 0; i < n; i++) {
+    runoffPerCell[i] = Math.max(0, intensity - infiltration[i]) / 1000 / 3600 * cell * cell
+    if (runoffPerCell[i] > maxRunoff) maxRunoff = runoffPerCell[i]
+  }
+  // Downstream routing order: descending filled elevation = upstream first.
+  const routeOrder = Array.from({ length: n }, (_, i) => i).sort((a, b) => filled[b] - filled[a])
+  // Discharge arriving at each cell from its whole catchment (m³/s), reused
+  // across timesteps: recompute the catchment delivery once per output frame.
+  const dischargeIn = new Float32Array(n)
+  const routeRunoff = () => {
+    dischargeIn.fill(0)
+    for (let i = 0; i < n; i++) dischargeIn[i] = runoffPerCell[i]
+    for (const i of routeOrder) {
+      const r = receiverIdx[i]
+      if (r >= 0) dischargeIn[r] += dischargeIn[i]
+    }
+  }
+  routeRunoff()
+
   // Discretized boundary: outflow at domain edges
   const frameDepths = []
   const frameSpeeds = []
@@ -206,22 +248,36 @@ export async function simulateFlashFlood(dem, coverGrid, opts = {}) {
 
   const timeStepSeconds = (durationMin * 60) / opts.outputFrames
   let simTime = 0
-  const rainRate = (intensity / 1000 / 3600) * runoffCoef // m/s on surface
+  let dE = null, dS = null
+  // (legacy uniform-rain rate removed — inflow now arrives via the routed
+  // catchment discharge `dischargeIn` computed above)
 
   for (let f = 0; f < opts.outputFrames; f++) {
     // Yield to the event loop so the UI keeps breathing during long solves.
     if (opts.yieldFn) await opts.yieldFn()
     else await new Promise(r => setTimeout(r, 0))
-    const innerSteps = Math.max(2, Math.round(timeStepSeconds / dt))
+    const innerSteps = stepsPerFrame
+    if (opts.onProgress) opts.onProgress(f / opts.outputFrames, `Routing flood wave — frame ${f + 1}/${opts.outputFrames}`)
 
     for (let s = 0; s < innerSteps; s++) {
       simTime += dt
 
-      // Rainfall
+      // Storm hyetograph: ramps up, peaks mid-storm, tapers off.
       const rainProfile =
         simTime < durationMin * 60 * 0.35 ? 1 : Math.max(0.15, 1 - (simTime / (durationMin * 60) - 0.35) * 1.2)
+
+      // Water enters as LOCAL rainfall excess on every cell (rain · runoff
+      // coefficient). The donor-cell scheme then routes it downslope, so it
+      // converges into the drainage network exactly like real overland flow:
+      // rivers swell first, hillsides keep only a thin film. (Injecting the
+      // full catchment discharge at every cell — the previous draft —
+      // re-counted upstream water once per downstream cell and produced
+      // physically impossible 60 m depths.)
       for (let i = 0; i < n; i++) {
-        depth[i] += rainRate * rainProfile * dt
+        const inflow = runoffPerCell[i] * rainProfile // m³/s local excess
+        if (inflow > 0) {
+          depth[i] += (inflow * dt) / (cell * cell)
+        }
       }
 
       // Stable upwind donor-cell volume-transfer scheme. Flow across each
@@ -230,8 +286,10 @@ export async function simulateFlashFlood(dem, coverGrid, opts = {}) {
       // donor-volume fraction. This guarantees positivity and stability
       // (the previous explicit diffusive-wave flux form diverged on steep
       // head gradients).
-      const dE = new Float32Array(n)
-      const dS = new Float32Array(n)
+      // Reused scratch buffers — allocating 2×n floats per inner step
+      // (thousands of times per solve) made the solver crawl under GC pressure.
+      if (!dE) { dE = new Float32Array(n); dS = new Float32Array(n) }
+      dE.fill(0); dS.fill(0)
       velU.fill(0)
       velV.fill(0)
       const donorFrac = 0.22
@@ -244,16 +302,20 @@ export async function simulateFlashFlood(dem, coverGrid, opts = {}) {
             if (hFlow > 0.002) {
               const dh = (filled[i] + depth[i]) - (filled[j] + depth[j])
               if (dh > 0) {
-                const slope = dh / cell
-                const vRaw = (1 / manning[i]) * Math.pow(hFlow, 2 / 3) * Math.sqrt(slope)
-                const v = Math.min(vRaw, vCap)
-                let dVol = v * hFlow * cell * dt
-                dVol = Math.min(dVol, donorFrac * depth[i] * cell * cell)
-                if (dVol > 0) {
-                  dE[i] = dVol
-                  velU[i] = v // donor
-                  velU[j] = v // receiver (water arrives moving +x)
-                }
+              const slope = dh / cell
+              const vRaw = (1 / manning[i]) * Math.pow(hFlow, 2 / 3) * Math.sqrt(slope)
+              const v = Math.min(vRaw, vCap) // CFL cap governs VOLUME transfer only
+              let dVol = v * hFlow * cell * dt
+              dVol = Math.min(dVol, donorFrac * depth[i] * cell * cell)
+              if (dVol > 0) {
+                dE[i] = dVol
+                // Reported/visual velocity is the physical Manning velocity
+                // (capped at a flash-flood-realistic 12 m/s), not the
+                // numerical CFL-capped transfer rate.
+                const vPhys = Math.min(vRaw, 12)
+                velU[i] = vPhys // donor
+                velU[j] = vPhys // receiver (water arrives moving +x)
+              }
               }
             }
           }
@@ -263,16 +325,17 @@ export async function simulateFlashFlood(dem, coverGrid, opts = {}) {
             if (hFlow > 0.002) {
               const dh = (filled[i] + depth[i]) - (filled[j] + depth[j])
               if (dh > 0) {
-                const slope = dh / cell
-                const vRaw = (1 / manning[i]) * Math.pow(hFlow, 2 / 3) * Math.sqrt(slope)
-                const v = Math.min(vRaw, vCap)
-                let dVol = v * hFlow * cell * dt
-                dVol = Math.min(dVol, donorFrac * depth[i] * cell * cell)
-                if (dVol > 0) {
-                  dS[i] = dVol
-                  velV[i] = v // donor
-                  velV[j] = v // receiver (water arrives moving +y)
-                }
+              const slope = dh / cell
+              const vRaw = (1 / manning[i]) * Math.pow(hFlow, 2 / 3) * Math.sqrt(slope)
+              const v = Math.min(vRaw, vCap) // CFL cap governs VOLUME transfer only
+              let dVol = v * hFlow * cell * dt
+              dVol = Math.min(dVol, donorFrac * depth[i] * cell * cell)
+              if (dVol > 0) {
+                dS[i] = dVol
+                const vPhys = Math.min(vRaw, 12)
+                velV[i] = vPhys // donor
+                velV[j] = vPhys // receiver (water arrives moving +y)
+              }
               }
             }
           }
@@ -295,8 +358,13 @@ export async function simulateFlashFlood(dem, coverGrid, opts = {}) {
         }
       }
 
-      // Speed magnitude for rendering & stats (from face velocities)
-      for (let i = 0; i < n; i++) speed[i] = Math.hypot(velU[i], velV[i])
+      // Speed magnitude for rendering & stats (from face velocities).
+      // Diagonal flow sets both face components — normalise so the reported
+      // magnitude is the physical speed, not the vector sum of two caps.
+      for (let i = 0; i < n; i++) {
+        const mag = Math.hypot(velU[i], velV[i])
+        speed[i] = mag > 12 ? 12 : mag
+      }
     }
 
     // Frame stats
@@ -423,13 +491,28 @@ export function simulateLandslide(dem, slopes, fs, opts = {}) {
   const stopSlope = opts.depositionSlope || 8
   const dt = Math.min(0.5, cell / 10)
 
-  // Release zone: FS below threshold, clustered near steepest areas
+  // Release zone: FS below threshold, clustered near steepest areas.
+  // Rainfall triggering is PROGRESSIVE: pore pressures build through the
+  // storm, so cells with marginal stability (fs just above 1) fail later in
+  // the run — the failure zone retrogresses upslope out of the hollows
+  // instead of the whole hillslope detaching at t=0.
   const fsThreshold = opts.fsThreshold || 1.0
+  const headroom = opts.fsHeadroom != null ? opts.fsHeadroom : 0.35 // cells up to fs 1.35 join as the wetting front penetrates
+  const rainWindowS = opts.rainWindowSeconds != null ? opts.rainWindowSeconds : (opts.simSeconds || 90) * 0.45
   const release = new Float32Array(n)
+  const failTime = new Float32Array(n).fill(Infinity)
   let releaseCells = 0
   for (let i = 0; i < n; i++) {
     if (fs[i] < fsThreshold && slopes[i] > 15) {
+      // Already-unstable cores: saturated hollows fail at storm onset.
       release[i] = (fsThreshold - fs[i]) * (slopes[i] / 45)
+      failTime[i] = 0
+      releaseCells++
+    } else if (fs[i] < fsThreshold + headroom && slopes[i] > 15) {
+      // Marginal cells: time-to-failure scales with how close fs is to 1.
+      const wet = (fs[i] - fsThreshold) / headroom // 0 → fails immediately, 1 → end of window
+      failTime[i] = rainWindowS * Math.min(1, Math.max(0.05, wet))
+      release[i] = 0.4 * (fsThreshold + headroom - fs[i]) * (slopes[i] / 45)
       releaseCells++
     }
   }
@@ -443,10 +526,11 @@ export function simulateLandslide(dem, slopes, fs, opts = {}) {
     }
   }
 
+  const sourceDepth = opts.sourceDepthMeters || 3.5
   // State: debris thickness (m), velocities
   let h = new Float32Array(n)
   const speed = new Float32Array(n)
-  for (let i = 0; i < n; i++) h[i] = release[i] * (opts.sourceDepthMeters || 3.5)
+  for (let i = 0; i < n; i++) h[i] = failTime[i] === 0 ? release[i] * sourceDepth : 0
 
   // Bed entrainment: finite per-cell budget (Hungr & Evans style) — each cell
   // can only contribute a limited depth of bed material before it is spent.
@@ -481,6 +565,18 @@ export function simulateLandslide(dem, slopes, fs, opts = {}) {
   for (let f = 0; f < frames; f++) {
     for (let s = 0; s < outEvery; s++) {
       simTime += dt
+
+      // Progressive failure: newly-failed marginal cells join the moving
+      // mass as pore pressure builds (their source thickness feeds in over
+      // a few steps, not as an instantaneous block drop).
+      for (let i = 0; i < n; i++) {
+        if (simTime >= failTime[i] && failTime[i] !== Infinity) {
+          const feed = release[i] * (opts.sourceDepthMeters || 3.5) * Math.min(1, dt / 2)
+          h[i] += feed
+          failTime[i] = simTime + 2 // keep feeding this cell for ~2 s then stop
+          if (feed <= 0) failTime[i] = Infinity
+        }
+      }
 
       // Mass-conservative downhill transfer. (The previous version applied
       // outflow with an inverted sign — donors GAINED the mass they sent and

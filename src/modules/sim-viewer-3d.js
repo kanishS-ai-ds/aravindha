@@ -249,6 +249,54 @@ export class SimViewer3D {
     this.terrainMesh.castShadow = true
     this.scene.add(this.terrainMesh)
 
+    // Skirt walls: drop every border vertex straight down to the pedestal
+    // top so the terrain edge always meets the geological block. Without this
+    // the raised rim floats above the pedestal and the camera sees a black
+    // gap under the terrain sheet (the "incomplete terrain" screenshot).
+    const skirtDepth = Math.max(2, (this.relief * this.vertScale * this.worldScale) * 0.04)
+    const edgeWorld = (res * cell * this.worldScale) / 2
+    const rimColor = new THREE.Color(0x4a3a2a) // weathered rock face
+    const skirtPositions = []
+    const skirtColors = []
+    const rimSample = new Float32Array(res)
+    // Walk the four border loops: N row, S row, W col, E col. Each segment
+    // becomes a vertical quad from terrain height down to skirtDepth below 0.
+    const emitSkirt = (idxA, idxB) => {
+      const hA = pos.getY(idxA)
+      const hB = pos.getY(idxB)
+      const xA = pos.getX(idxA), zA = pos.getZ(idxA)
+      const xB = pos.getX(idxB), zB = pos.getZ(idxB)
+      // quad = A(top) B(top) B(bottom) A(bottom)
+      skirtPositions.push(xA, hA, zA, xB, hB, zB, xB, -skirtDepth, zB, xA, -skirtDepth, zA)
+      for (let k = 0; k < 4; k++) skirtColors.push(rimColor.r, rimColor.g, rimColor.b)
+    }
+    for (let gx = 0; gx < res - 1; gx++) emitSkirt(gx, gx + 1) // north
+    const baseS = (res - 1) * res
+    for (let gx = 0; gx < res - 1; gx++) emitSkirt(baseS + gx, baseS + gx + 1) // south
+    for (let gy = 0; gy < res - 1; gy++) emitSkirt(gy * res, (gy + 1) * res) // west
+    for (let gy = 0; gy < res - 1; gy++) emitSkirt(gy * res + res - 1, (gy + 1) * res + res - 1) // east
+    const skirtGeo = new THREE.BufferGeometry()
+    const skirtPosArr = new Float32Array(skirtPositions)
+    skirtGeo.setAttribute('position', new THREE.BufferAttribute(skirtPosArr, 3))
+    skirtGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(skirtColors), 3))
+    const index = []
+    for (let q = 0; q < skirtPosArr.length / 12; q++) {
+      const v = q * 4
+      // winding per side handled by DoubleSide — this is a static rim
+      index.push(v, v + 1, v + 2, v, v + 2, v + 3)
+    }
+    skirtGeo.setIndex(index)
+    skirtGeo.computeVertexNormals()
+    const skirtMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.98,
+      metalness: 0,
+      side: THREE.DoubleSide
+    })
+    const skirt = new THREE.Mesh(skirtGeo, skirtMat)
+    skirt.receiveShadow = true
+    this.scene.add(skirt)
+
     // cross-section pedestal (geological block look, like the reference image)
     const depth = Math.max(60, this.relief * 0.45) * this.worldScale
     const pedestalGeo = new THREE.BoxGeometry(
@@ -273,7 +321,9 @@ export class SimViewer3D {
       }
     }
     const pedestal = new THREE.Mesh(pedestalGeo, pedestalMats)
-    pedestal.position.y = -depth / 2 - 0.5
+    // Pedestal top must sit exactly at y=0 (the DEM min-height plane) so the
+    // skirt walls land on it — a hidden seam here read as a floating map.
+    pedestal.position.y = -depth / 2 + 0.01
     this.scene.add(pedestal)
   }
 
@@ -494,15 +544,28 @@ export class SimViewer3D {
     if (!this.frames.length) return
 
     const res = this.dem.res
-    const count = Math.min(150, Math.max(40, Math.round(res * 0.6)))
+    const count = Math.min(70, Math.max(24, Math.round(res * 0.3)))
+    // Build a weighted list of release-zone cells so boulders originate where
+    // the slope actually fails — scattered rocks over the whole mountain were
+    // a sampling artifact (the old rejection sampler accepted almost any cell
+    // after 24 tries and dotted the entire peak with stones).
+    const mask = this.simResult.releaseMask
+    const pool = []
+    if (mask) {
+      for (let i = 0; i < mask.length; i++) {
+        if (mask[i] > 0.01) pool.push(i)
+      }
+    }
     for (let i = 0; i < count; i++) {
-      // spawn near high-release cells: sample random cells weighted by release mask
-      let gx, gy, tries = 0
-      do {
+      let gx, gy
+      if (pool.length > 0) {
+        const ci = pool[Math.floor(Math.random() * pool.length)]
+        gx = ci % res
+        gy = Math.floor(ci / res)
+      } else {
         gx = Math.floor(Math.random() * res)
         gy = Math.floor(Math.random() * res)
-        tries++
-      } while (tries < 24 && (!this.simResult.releaseMask || this.simResult.releaseMask[gy * res + gx] <= 0.01))
+      }
       const size = 6 + Math.random() * 16
       const geo = new THREE.DodecahedronGeometry(size, 0)
       const shade = 0.35 + Math.random() * 0.2
@@ -688,11 +751,24 @@ export class SimViewer3D {
       const { x, z } = this._gridToWorld(b.gx, b.gy)
       const ground = this._terrainY(b.gx, b.gy)
       const debrisY = (f[Math.round(b.gy) * res + Math.round(b.gx)] / this.debrisMax) * this.relief * 0.06 * this.vertScale
-      const targetY = Math.max(ground, ground + debrisY) + b.size * 0.7
-      b.mesh.position.set(x, targetY, z)
 
-      b.mesh.rotation.x += b.spin.x * 0.1
-      b.mesh.rotation.z += b.spin.z * 0.1
+      // A boulder only rides ON the debris surface while the flow around it
+      // is still moving. Once the local flow slows below ~1.5 m/s the boulder
+      // settles INTO the deposit — buried rocks don't float on a settled
+      // hillside (the scattered "floating stones" artifact).
+      const localH = f[Math.round(b.gy) * res + Math.round(b.gx)] || 0
+      const localSpeed = (this.simResult.frameSpeeds?.[Math.min(frameIdx, this.simResult.frameSpeeds.length - 1)] || [])[Math.round(b.gy) * res + Math.round(b.gx)] || 0
+      if (localH > 0.05 && localSpeed > 1.5) {
+        const targetY = Math.max(ground, ground + debrisY) + b.size * 0.55
+        b.mesh.position.set(x, targetY, z)
+        b.mesh.rotation.x += b.spin.x * 0.1
+        b.mesh.rotation.z += b.spin.z * 0.1
+      } else {
+        // settle: sink to ~55% below the deposit surface (partially buried)
+        const targetY = ground + debrisY * 0.4 + b.size * 0.18
+        const cur = b.mesh.position.y
+        b.mesh.position.set(x, cur + (targetY - cur) * 0.12, z)
+      }
     }
   }
 
