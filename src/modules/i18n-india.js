@@ -121,7 +121,7 @@ export const INDIA_PHRASES = {
     "Soil Type": "ମାଟି ପ୍ରକାର",
     "Population Exposure": "ଜନସଂଖ୍ୟା ସଂସ୍ପର୍ଶ",
     "Landslide Risk Zones": "ଭୂମିସ୍ଖଳନ ବିପଦ ମଣ୍ଡଳ",
-    "3D Risk Heatmap": "3D ବିପଦ ହିଟମ୍ୟାପ୍",
+    "Road Connectivity Risk": "ବିପଦ ହିଟମ୍ୟାପ୍",
     "Open in 3D Simulation Cockpit": "3D ସିମୁଲେସନ୍ କକ୍‌ପିଟରେ ଖୋଲନ୍ତୁ"
   },
 
@@ -238,7 +238,7 @@ export const INDIA_PHRASES = {
     "Soil Type": "જમીનનો પ્રકાર",
     "Population Exposure": "વસ્તી સંપર્ક",
     "Landslide Risk Zones": "જમીનધસાન જોખમ ઝોન",
-    "3D Risk Heatmap": "3D જોખમ હીટમેપ",
+    "Road Connectivity Risk": "જોખમ હીટમેપ",
     "Open in 3D Simulation Cockpit": "3D સિમ્યુલેશન કોકપિટમાં ખોલો"
   },
 
@@ -355,7 +355,7 @@ export const INDIA_PHRASES = {
     "Soil Type": "ਮਿੱਟੀ ਦੀ ਕਿਸਮ",
     "Population Exposure": "ਆਬਾਦੀ ਸੰਪਰਕ",
     "Landslide Risk Zones": "ਭੂਮੀ ਖਿਸਕਣ ਜੋਖਮ ਖੇਤਰ",
-    "3D Risk Heatmap": "3D ਜੋਖਮ ਹੀਟਮੈਪ",
+    "Road Connectivity Risk": "ਜੋਖਮ ਹੀਟਮੈਪ",
     "Open in 3D Simulation Cockpit": "3D ਸਿਮੂਲੇਸ਼ਨ ਕੌਕਪਿਟ ਵਿੱਚ ਖੋਲ੍ਹੋ"
   },
 
@@ -472,7 +472,7 @@ export const INDIA_PHRASES = {
     "Soil Type": "مٹی کی قسم",
     "Population Exposure": "آبادی نمائش",
     "Landslide Risk Zones": "زمین سلڑن خطرہ خطے",
-    "3D Risk Heatmap": "3D خطرہ ہیٹ میپ",
+    "Road Connectivity Risk": "خطرہ ہیٹ میپ",
     "Open in 3D Simulation Cockpit": "3D سمولیشن کاک پٹ میں کھولیں"
   },
 
@@ -589,7 +589,7 @@ export const INDIA_PHRASES = {
     "Soil Type": "मृत्तिकाप्रकारः",
     "Population Exposure": "जनसंख्यासंस्पर्शः",
     "Landslide Risk Zones": "भूस्खलनजोखिमक्षेत्राणि",
-    "3D Risk Heatmap": "3D जोखिमहीटमैप्",
+    "Road Connectivity Risk": "जोखिमहीटमैप्",
     "Open in 3D Simulation Cockpit": "3D अनुकरणकक्षे उद्घाटयतु"
   },
 
@@ -650,7 +650,7 @@ export const INDIA_PHRASES = {
     "Runout Distance": "व्हाव अंतर",
     "Slope Angle": "देढ कोन",
     "Soil Type": "मातयेचो प्रकार",
-    "3D Risk Heatmap": "3D जोखीम हीटमॅप"
+    "Road Connectivity Risk": "जोखीम हीटमॅप"
   },
 
   // Maithili (मैथिली)
@@ -710,7 +710,7 @@ export const INDIA_PHRASES = {
     "Runout Distance": "बहाव दूरी",
     "Slope Angle": "ढाल कोण",
     "Soil Type": "माटीक प्रकार",
-    "3D Risk Heatmap": "3D जोखिम हीटमैप"
+    "Road Connectivity Risk": "जोखिम हीटमैप"
   },
 
   // Dogri (डोगरी)
@@ -770,7 +770,7 @@ export const INDIA_PHRASES = {
     "Runout Distance": "वहाव दूरी",
     "Slope Angle": "ढलान कोण",
     "Soil Type": "मिट्टी किसम",
-    "3D Risk Heatmap": "3D जोखम हीटमैप"
+    "Road Connectivity Risk": "जोखम हीटमैप"
   },
 
   // Bodo (बड़ो)
@@ -830,7 +830,7 @@ export const INDIA_PHRASES = {
     "Runout Distance": "गिदिं बेराम",
     "Slope Angle": "गिदिं कोन",
     "Soil Type": "हाथि मोनसे",
-    "3D Risk Heatmap": "3D राहा हीटमॅप"
+    "Road Connectivity Risk": "राहा हीटमॅप"
   },
 
   // Kashmiri (کٲشُر) — Perso-Arabic
@@ -867,7 +867,7 @@ export const INDIA_PHRASES = {
     "Severity index": "شدت اِشارکہ",
     "Landslide Risk Zones": "زمیٖن کھسک خطرہ علاقہ",
     "Slope Angle": "ڈھلوان زاوِیہ",
-    "3D Risk Heatmap": "3D خطرہ ہیٹ میپ"
+    "Road Connectivity Risk": "خطرہ ہیٹ میپ"
   },
 
   // Sindhi (سنڌي) — Perso-Arabic
@@ -927,7 +927,7 @@ export const INDIA_PHRASES = {
     "Runout Distance": "وهڪري فاصلو",
     "Slope Angle": "ڍلو زاويو",
     "Soil Type": "مٽي جو قسم",
-    "3D Risk Heatmap": "3D خطرو هيٽ ميپ"
+    "Road Connectivity Risk": "خطرو هيٽ ميپ"
   },
 
   // Manipuri (ꯃꯦꯏꯇꯦꯏ) — Meitei Mayek
@@ -961,7 +961,7 @@ export const INDIA_PHRASES = {
     "Population exposed": "ꯁꯤꯡꯉꯨ ꯑꯣꯏꯕ ꯃꯤꯁꯤꯡ",
     "Affected area": "ꯁꯤꯡꯉꯨ ꯑꯣꯏꯕ ꯃꯐꯝ",
     "Slope Angle": "ꯆꯤꯡꯊꯣꯀꯄꯨ ꯑꯦꯉ꯭ꯀꯦꯜ",
-    "3D Risk Heatmap": "3D ꯐꯥꯎ ꯍꯤꯠꯃꯦꯞ"
+    "Road Connectivity Risk": "ꯐꯥꯎ ꯍꯤꯠꯃꯦꯞ"
   },
 
   // Santali (ᱥᱟᱱᱛᱟᱲᱤ) — Ol Chiki
@@ -1003,6 +1003,6 @@ export const INDIA_PHRASES = {
     "Severity index": "ᱵᱤᱯᱚᱫᱽ ᱢᱟᱯᱟᱝ",
     "Landslide Risk Zones": "ᱵᱩᱨᱩ ᱟᱬᱜᱚ ᱵᱤᱯᱚᱫᱽ ᱡᱟᱜᱟ",
     "Slope Angle": "ᱜᱤᱰᱤ ᱠᱚᱬ",
-    "3D Risk Heatmap": "3D ᱵᱤᱯᱚᱫᱽ ᱦᱤᱴᱢᱮᱯ"
+    "Road Connectivity Risk": "ᱵᱤᱯᱚᱫᱽ ᱦᱤᱴᱢᱮᱯ"
   }
 };

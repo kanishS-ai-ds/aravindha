@@ -192,9 +192,18 @@ export async function fetchElevationGrid(bbox, gridRes, onProgress) {
   const y0 = Math.floor(MERCATOR.latToY(bbox.maxLat, zoom))
   const y1 = Math.floor(MERCATOR.latToY(bbox.minLat, zoom))
 
-  const { canvas, ctx } = await fetchTileRange(
+  const { canvas, ctx, failures } = await fetchTileRange(
     x0, y0, x1, y1, zoom, TERRAIN_TILE_URL, onProgress, 'DEM'
   )
+
+  // Partial tile loss previously slipped through (only 100% failure threw):
+  // missing tiles decode as -32768 voids, the void-fill then flattens the
+  // whole grid to one elevation, and downstream slope/ML scoring silently
+  // reads garbage. Treat >20% tile loss as a failed fetch so callers retry.
+  const totalTiles = (x1 - x0 + 1) * (y1 - y0 + 1)
+  if (failures > Math.ceil(totalTiles * 0.2)) {
+    throw new Error(`DEM incomplete: ${failures}/${totalTiles} tiles failed (network stall)`)
+  }
 
   const pxW = canvas.width
   const pxH = canvas.height

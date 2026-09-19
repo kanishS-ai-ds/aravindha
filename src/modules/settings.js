@@ -12,6 +12,20 @@ export function initSettings() {
 }
 
 export async function setupSettingsUI() {
+  // Dedicated SMS Alerts tab hosts the gateway/recipients panel; the Settings
+  // section on the overview no longer duplicates it.
+  const smsContainer = document.getElementById('sms-settings-container');
+  if (smsContainer) {
+    let settingsSection = smsContainer.querySelector('.settings-panel');
+    if (!settingsSection) {
+      settingsSection = document.createElement('section');
+      settingsSection.className = 'panel settings-panel';
+      smsContainer.appendChild(settingsSection);
+    }
+    fetchAndRenderSettings(settingsSection);
+    return;
+  }
+
   let settingsSection = document.querySelector('.settings-panel');
   
   if (!settingsSection) {

@@ -1060,7 +1060,7 @@ const SIM_PHRASES = {
     "Settings": "सेटिंग्स",
     "COMMAND CENTER": "कमांड सेंटर",
     "SYSTEM": "प्रणाली",
-    "3D Risk Heatmap": "3D जोखिम हीटमैप",
+    "Road Connectivity Risk": "जोखिम हीटमैप",
     "Open in 3D Simulation Cockpit": "3D सिमुलेशन कॉकपिट में खोलें",
     "Show Flow Path": "प्रवाह पथ दिखाएं",
     "Show Runout Zone": "बहाव क्षेत्र दिखाएं",

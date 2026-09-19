@@ -4,6 +4,7 @@
  */
 
 import Chart from 'chart.js/auto';
+import * as maplibregl from 'maplibre-gl';
 import { Landslide3DView } from './landslide-simulation-view.js';
 import {
   REGIONAL_PRESETS,
@@ -34,6 +35,7 @@ export class LandslideDashboardUI {
 
     container.innerHTML = this.renderTemplate();
     this.attachEventListeners();
+    this.startLiveClock();
     this.initMiniThumbnails();
     this.initRiskProgressionChart();
 
@@ -89,18 +91,7 @@ export class LandslideDashboardUI {
             <span>Live Data</span>
           </div>
 
-          <button class="sim-icon-btn" id="sim-alert-bell" title="Alerts & Telemetry">
-            <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/></svg>
-            <span class="sim-bell-badge">2</span>
-          </button>
 
-          <div class="sim-user-profile">
-            <div class="sim-avatar">
-              <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-            </div>
-            <span class="sim-username">Research_Team</span>
-            <span class="sim-user-caret">▾</span>
-          </div>
         </div>
       </header>
 
@@ -282,8 +273,7 @@ export class LandslideDashboardUI {
               <button class="tool-btn" id="tool-pan" title="Pan"><span class="tool-icon">✥</span><span>Pan</span></button>
               <button class="tool-btn" id="tool-zoom-in" title="Zoom In"><span class="tool-icon">🔍+</span><span>Zoom In</span></button>
               <button class="tool-btn" id="tool-zoom-out" title="Zoom Out"><span class="tool-icon">🔍-</span><span>Zoom Out</span></button>
-              <button class="tool-btn" id="tool-measure" title="Measure Distance"><span class="tool-icon">📏</span><span>Measure</span></button>
-              <button class="tool-btn" id="tool-draw" title="Draw ROI"><span class="tool-icon">✏</span><span>Draw</span></button>
+              <button class="tool-btn" id="tool-draw" title="Draw Boundary"><span class="tool-icon">✏</span><span>Draw</span></button>
               <button class="tool-btn" id="tool-identify" title="Feature Identify"><span class="tool-icon">ℹ</span><span>Identify</span></button>
             </div>
           </div>
@@ -296,8 +286,8 @@ export class LandslideDashboardUI {
             <!-- 2D / 3D RISK HEATMAP PILL SWITCHER -->
             <div class="sim-viewmode-pills">
               <button class="viewmode-btn" data-mode="2d">2D</button>
-              <button class="viewmode-btn active viewmode-heatmap-btn" data-mode="heatmap3d" title="3D Topographic Risk Heatmap">
-                <span class="heatmap-btn-icon">🌋</span> 3D Risk Heatmap
+              <button class="viewmode-btn active viewmode-heatmap-btn" data-mode="heatmap3d" title="Landslide Susceptibility Heatmap">
+                <span class="heatmap-btn-icon">🔥</span> Heatmap
               </button>
             </div>
 
@@ -327,105 +317,6 @@ export class LandslideDashboardUI {
 
             <!-- 3D MAP CANVAS CONTAINER -->
             <div id="simulation-map-container" class="sim-map-canvas"></div>
-          </div>
-
-          <!-- BOTTOM TIMELINE SCRUBBER & FILMSTRIP -->
-          <div class="sim-timeline-panel">
-            <div class="timeline-controls-row">
-              <div class="timeline-playback-btns">
-                <button class="t-btn play-btn" id="t-play-btn" title="Play / Pause">
-                  <svg viewBox="0 0 24 24" class="w-5 h-5 fill-white"><path d="M8 5v14l11-7z"/></svg>
-                </button>
-                <button class="t-btn" id="t-step-prev" title="Step Back">
-                  <svg viewBox="0 0 24 24" class="w-4 h-4 fill-slate-300"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                </button>
-                <button class="t-btn" id="t-step-next" title="Step Forward">
-                  <svg viewBox="0 0 24 24" class="w-4 h-4 fill-slate-300"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-                </button>
-              </div>
-
-              <!-- SLIDER & TIME TICKS -->
-              <div class="timeline-slider-container">
-                <input type="range" id="t-scrubber-range" min="0" max="6" step="1" value="6" class="timeline-range-slider" />
-                <div class="timeline-ticks-labels">
-                  <span class="tick-lbl" data-idx="0">08:00</span>
-                  <span class="tick-lbl" data-idx="1">09:00</span>
-                  <span class="tick-lbl" data-idx="2">10:00</span>
-                  <span class="tick-lbl" data-idx="3">11:00</span>
-                  <span class="tick-lbl" data-idx="4">12:00</span>
-                  <span class="tick-lbl" data-idx="5">13:00</span>
-                  <span class="tick-lbl active" data-idx="6">14:00</span>
-                </div>
-              </div>
-
-              <div class="timeline-speed-box">
-                <select id="t-speed-select" class="t-speed-dropdown">
-                  <option value="1" selected>1x</option>
-                  <option value="2">2x</option>
-                  <option value="4">4x</option>
-                </select>
-                <span class="t-current-tag" id="t-current-stamp">14:30 (Current)</span>
-              </div>
-            </div>
-
-            <!-- FILMSTRIP THUMBNAILS & ANIMATION TOGGLES -->
-            <div class="timeline-bottom-row">
-              <div class="timeline-filmstrip" id="t-filmstrip-strip">
-                <!-- 7 filmstrip cards -->
-                <div class="filmstrip-card" data-idx="0">
-                  <canvas class="thumb-canvas" width="90" height="52"></canvas>
-                  <span class="thumb-time">08:00</span>
-                </div>
-                <div class="filmstrip-card" data-idx="1">
-                  <canvas class="thumb-canvas" width="90" height="52"></canvas>
-                  <span class="thumb-time">09:00</span>
-                </div>
-                <div class="filmstrip-card" data-idx="2">
-                  <canvas class="thumb-canvas" width="90" height="52"></canvas>
-                  <span class="thumb-time">10:00</span>
-                </div>
-                <div class="filmstrip-card" data-idx="3">
-                  <canvas class="thumb-canvas" width="90" height="52"></canvas>
-                  <span class="thumb-time">11:00</span>
-                </div>
-                <div class="filmstrip-card" data-idx="4">
-                  <canvas class="thumb-canvas" width="90" height="52"></canvas>
-                  <span class="thumb-time">12:00</span>
-                </div>
-                <div class="filmstrip-card" data-idx="5">
-                  <canvas class="thumb-canvas" width="90" height="52"></canvas>
-                  <span class="thumb-time">13:00</span>
-                </div>
-                <div class="filmstrip-card active" data-idx="6">
-                  <canvas class="thumb-canvas" width="90" height="52"></canvas>
-                  <span class="thumb-time">14:00</span>
-                </div>
-              </div>
-
-              <!-- ANIMATION CONTROLS -->
-              <div class="timeline-anim-controls">
-                <div class="anim-ctrl-title">Animation Controls</div>
-                <div class="anim-ctrl-checkboxes">
-                  <label class="anim-chk-item">
-                    <input type="checkbox" id="chk-anim-flow" checked />
-                    <span>Show Flow Path</span>
-                  </label>
-                  <label class="anim-chk-item">
-                    <input type="checkbox" id="chk-anim-runout" checked />
-                    <span>Show Runout Zone</span>
-                  </label>
-                  <label class="anim-chk-item">
-                    <input type="checkbox" id="chk-anim-contours" checked />
-                    <span>Show Contours</span>
-                  </label>
-                </div>
-                <button class="anim-replay-btn" id="btn-anim-replay">
-                  <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 mr-1 inline"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
-                  <span>Replay</span>
-                </button>
-              </div>
-            </div>
-
           </div>
 
         </main>
@@ -883,6 +774,166 @@ export class LandslideDashboardUI {
         layersPanel.classList.toggle('collapsed');
       });
     }
+
+    // 13. Map Tools — wired lazily since the map initializes async
+    this._wireMapTools();
+  }
+
+  _wireMapTools() {
+    const getMap = () => this.simView && this.simView.map;
+    let activeTool = null;
+    let measurePoints = [];
+    let drawPoints = [];
+    let measureSourceId = 'sim-measure-src';
+    let drawSourceId = 'sim-draw-src';
+    let measureLayerId = 'sim-measure-layer';
+    let drawLayerId = 'sim-draw-layer';
+    let drawPopup = null;
+
+    const clearActiveTool = () => {
+      activeTool = null;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+      measurePoints = [];
+      drawPoints = [];
+      const m = getMap();
+      if (m && m.getCanvas) m.getCanvas().style.cursor = '';
+    };
+
+    const setActiveTool = (toolId) => {
+      if (activeTool === toolId) { clearActiveTool(); return; }
+      clearActiveTool();
+      activeTool = toolId;
+      const btn = document.getElementById('tool-' + toolId);
+      if (btn) btn.classList.add('active');
+      const m = getMap();
+      if (m && m.getCanvas) m.getCanvas().style.cursor = 'crosshair';
+    };
+
+    // Pan — restore default drag interaction
+    const panBtn = document.getElementById('tool-pan');
+    if (panBtn) panBtn.addEventListener('click', () => {
+      clearActiveTool();
+      const m = getMap();
+      if (m) m.dragPan.enable();
+    });
+
+    // Zoom In / Zoom Out
+    const zoomInBtn = document.getElementById('tool-zoom-in');
+    const zoomOutBtn = document.getElementById('tool-zoom-out');
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => {
+      const m = getMap(); if (m) m.zoomIn({ duration: 400 });
+    });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => {
+      const m = getMap(); if (m) m.zoomOut({ duration: 400 });
+    });
+
+    // Draw — freehand pencil boundary (mousedown → drag → mouseup)
+    const drawBtn = document.getElementById('tool-draw');
+    if (drawBtn) drawBtn.addEventListener('click', () => {
+      if (activeTool === 'draw') { clearActiveTool(); return; }
+      clearActiveTool();
+      activeTool = 'draw';
+      drawBtn.classList.add('active');
+      const m = getMap();
+      if (m && m.getCanvas) m.getCanvas().style.cursor = 'crosshair';
+      drawPoints = [];
+    });
+
+    // Identify — click to show feature info
+    const identifyBtn = document.getElementById('tool-identify');
+    if (identifyBtn) identifyBtn.addEventListener('click', () => setActiveTool('identify'));
+
+    // Freehand drawing on the 3D map canvas
+    const simContainer = document.getElementById('simulation-map-container');
+    if (simContainer) {
+      let isDrawing = false;
+      const minPixelDist = 8; // minimum pixel gap between points
+
+      const toLngLat = (e) => {
+        const m = getMap(); if (!m) return null;
+        const rect = simContainer.getBoundingClientRect();
+        return m.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      };
+
+      const updateLiveLine = (pts) => {
+        if (!getMap()) return;
+        const m = getMap();
+        const srcId = 'sim-draw-src';
+        const lyrId = 'sim-draw-layer';
+        if (m.getSource(srcId)) m.removeSource(srcId);
+        if (m.getLayer(lyrId)) m.removeLayer(lyrId);
+        if (m.getLayer(lyrId + '-stroke')) m.removeLayer(lyrId + '-stroke');
+        if (pts.length < 2) return;
+        m.addSource(srcId, { type: 'geojson', data: {
+          type: 'FeatureCollection', features: [{
+            type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...pts, pts[0]].map(p => [p.lng, p.lat])] }
+          }]
+        }});
+        m.addLayer({ id: lyrId, type: 'fill', source: srcId, paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.18 } });
+        m.addLayer({ id: lyrId + '-stroke', type: 'line', source: srcId, paint: { 'line-color': '#f59e0b', 'line-width': 2 } });
+      };
+
+      const onMouseDown = (e) => {
+        if (activeTool !== 'draw') return;
+        if (e.button !== 0) return; // left button only
+        isDrawing = true;
+        drawPoints = [];
+        const pt = toLngLat(e);
+        if (pt) drawPoints.push(pt);
+      };
+
+      const onMouseMove = (e) => {
+        if (!isDrawing || activeTool !== 'draw') return;
+        const pt = toLngLat(e);
+        if (!pt) return;
+        const last = drawPoints[drawPoints.length - 1];
+        const m = getMap(); if (!m) return;
+        const p1 = m.project([last.lng, last.lat]);
+        const p2 = m.project([pt.lng, pt.lat]);
+        const dx = p2.x - p1.x; const dy = p2.y - p1.y;
+        if (dx * dx + dy * dy >= minPixelDist * minPixelDist) {
+          drawPoints.push(pt);
+          updateLiveLine(drawPoints);
+        }
+      };
+
+      const onMouseUp = (e) => {
+        if (!isDrawing || activeTool !== 'draw') return;
+        isDrawing = false;
+        if (drawPoints.length >= 3) {
+          // Compute enclosed area via shoelace formula
+          const area = Math.abs(drawPoints.reduce((s, p, i) => {
+            const n = drawPoints[(i + 1) % drawPoints.length];
+            return s + p.lng * n.lat - n.lng * p.lat;
+          }, 0) / 2);
+          const latMid = drawPoints.reduce((s, p) => s + p.lat, 0) / drawPoints.length;
+          const areaKm2 = area * ((111320 * Math.cos(latMid * Math.PI / 180)) / 1000) ** 2;
+          const center = drawPoints.reduce((c, p) => ({ lng: c.lng + p.lng / drawPoints.length, lat: c.lat + p.lat / drawPoints.length }), { lng: 0, lat: 0 });
+          this._showToolPopup(getMap(), center, `✏️ Enclosed area: ${areaKm2.toFixed(2)} km² (${drawPoints.length} boundary points)`);
+        }
+        drawPoints = [];
+      };
+
+      simContainer.addEventListener('mousedown', onMouseDown);
+      simContainer.addEventListener('mousemove', onMouseMove);
+      simContainer.addEventListener('mouseup', onMouseUp);
+      // Also handle click for Identify
+      simContainer.addEventListener('click', (e) => {
+        const m = getMap();
+        if (!m || activeTool !== 'identify') return;
+        const pt = toLngLat(e);
+        if (pt) this._showToolPopup(m, pt, `ℹ️ Coordinates: ${pt.lat.toFixed(4)}°N, ${pt.lng.toFixed(4)}°E`);
+      });
+    }
+  }
+
+  _showToolPopup(map, latlng, text) {
+    if (!map || !maplibregl) return;
+    const popup = new maplibregl.Popup({ offset: 12, closeButton: true, className: 'sim-tool-popup' })
+      .setLngLat(latlng)
+      .setHTML(`<div style="font-size:12px;color:#e9eef5;padding:2px;">${text}</div>`)
+      .addTo(map);
+    setTimeout(() => popup.remove(), 8000);
   }
 
   seekToStep(step) {
@@ -1161,6 +1212,19 @@ export class LandslideDashboardUI {
     });
   }
 
+  /** Live IST clock — ticks every second in the sim header. */
+  startLiveClock() {
+    const el = document.getElementById('sim-live-clock');
+    if (!el) return;
+    const fmt = () => new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    }).replace(',', ' ·') + ' IST';
+    el.textContent = fmt();
+    if (this._clockTimer) clearInterval(this._clockTimer);
+    this._clockTimer = setInterval(() => { el.textContent = fmt(); }, 1000);
+  }
+
   async handleCustomLocationSelected(info) {
     const { lng, lat, elevation, slope } = info;
 
@@ -1246,7 +1310,7 @@ export class LandslideDashboardUI {
     // 7. Update bottom alert status
     const alertBox = document.querySelector('.threat-alert-box span:nth-child(2)');
     if (alertBox) {
-      alertBox.innerText = `3D Topographic Risk Heatmap Active: ${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E (FoS ${ensemble.fos})`;
+      alertBox.innerText = `Road Connectivity Risk Active: ${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E (FoS ${ensemble.fos})`;
     }
 
     // 8. Real-time road connectivity around the selected point (OSM live)

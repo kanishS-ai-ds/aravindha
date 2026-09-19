@@ -113,6 +113,52 @@ export async function predictLandslideProbability(features) {
   };
 }
 
+/**
+ * Batch API: run N feature rows through the model in ONE inference call.
+ * Used by the susceptibility heatmap to score a whole DEM grid cheaply.
+ * Returns Float32Array of probabilities (fallback: per-row heuristic).
+ */
+export async function predictBatchLandslideProbability(featuresList) {
+  const rows = featuresList.map((features) => ({
+    rain_1d: features.rain_1d ?? 0,
+    rain_3d: features.rain_3d ?? (features.rain_1d ?? 0) * 2.2,
+    rain_7d: features.rain_7d ?? (features.rain_1d ?? 0) * 3.6,
+    rain_15d: features.rain_15d ?? (features.rain_1d ?? 0) * 5,
+    rain_max_7d: features.rain_max_7d ?? features.rain_1d ?? 0,
+    elevation_m: features.elevation_m ?? features.elevation ?? 500,
+    slope_deg: features.slope_deg ?? features.slope ?? 15,
+    ...monthFeatures(features.month),
+  }));
+
+  try {
+    const ort = await import('onnxruntime-web');
+    const session = await getOrt();
+    if (session && rows.length > 0) {
+      const flat = new Float32Array(rows.length * FEATURES.length);
+      rows.forEach((r, i) => FEATURES.forEach((k, j) => { flat[i * FEATURES.length + j] = r[k]; }));
+      const input = new ort.Tensor('float32', flat, [rows.length, FEATURES.length]);
+      const res = await session.run({ input });
+      const probsName = session.outputNames.find((n) => {
+        const t = res[n];
+        return t && t.type === 'float32' && t.data && t.data.length >= rows.length;
+      });
+      const t = probsName ? res[probsName] : null;
+      if (t && t.data.length === rows.length * 2) {
+        // [N,2] layout — take column 1 (positive class)
+        const out = new Float32Array(rows.length);
+        for (let i = 0; i < rows.length; i++) out[i] = t.data[i * 2 + 1];
+        return out;
+      }
+      if (t && t.data.length === rows.length) return Float32Array.from(t.data);
+      throw new Error('unexpected ONNX output shape');
+    }
+  } catch (e) {
+    console.warn('[ML] batch ONNX unavailable, using heuristic grid:', e?.message || e);
+  }
+
+  return Float32Array.from(rows.map((r) => quickHeuristic(r)));
+}
+
 /** Legacy-compatible: 4-level dashboard score from the same pipeline. */
 export async function predictRiskLevel(features) {
   const r = await predictLandslideProbability(features);

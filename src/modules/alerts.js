@@ -13,10 +13,17 @@ export function initAlerts() {
 }
 
 function setupSendAlertButton() {
+  // Dedicated tab button first (SMS Alerts Command Center)
+  const tabBtn = document.getElementById('smsTabSendBtn');
+  if (tabBtn) {
+    tabBtn.addEventListener('click', openSmsModal);
+    return;
+  }
+
   const alertBanner = document.querySelector('.alert-banner');
   if (!alertBanner) return;
 
-  // Find or create "Send Alert Now" SMS button in top alert banner
+  // Fallback: in-banner button when the tab layout isn't present
   let sendSmsBtn = alertBanner.querySelector('#sendSmsAlertBtn');
   if (!sendSmsBtn) {
     sendSmsBtn = document.createElement('button');
@@ -204,16 +211,29 @@ export async function fetchAndRenderAlertHistory() {
 }
 
 function renderAlertLogTable(logs) {
-  const alertBanner = document.querySelector('.alert-banner');
-  if (!alertBanner) return;
+  // Dedicated SMS Alerts tab container first; overview fallback otherwise.
+  const tabContainer = document.getElementById('sms-audit-container');
+  let auditBox;
+  if (tabContainer) {
+    auditBox = document.getElementById('alertAuditSection');
+    if (!auditBox) {
+      auditBox = document.createElement('div');
+      auditBox.id = 'alertAuditSection';
+      auditBox.className = 'panel alert-audit-panel';
+      tabContainer.appendChild(auditBox);
+    }
+  } else {
+    const alertBanner = document.querySelector('.alert-banner');
+    if (!alertBanner) return;
 
-  let auditBox = document.getElementById('alertAuditSection');
-  if (!auditBox) {
-    auditBox = document.createElement('div');
-    auditBox.id = 'alertAuditSection';
-    auditBox.className = 'panel alert-audit-panel';
-    auditBox.style.marginTop = '20px';
-    alertBanner.parentNode.insertBefore(auditBox, alertBanner.nextSibling);
+    auditBox = document.getElementById('alertAuditSection');
+    if (!auditBox) {
+      auditBox = document.createElement('div');
+      auditBox.id = 'alertAuditSection';
+      auditBox.className = 'panel alert-audit-panel';
+      auditBox.style.marginTop = '20px';
+      alertBanner.parentNode.insertBefore(auditBox, alertBanner.nextSibling);
+    }
   }
 
   if (!logs || logs.length === 0) {

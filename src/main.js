@@ -293,8 +293,8 @@ app.innerHTML = `
 
     <div class="brand">
 
-      <div class="brand-icon">
-        A
+      <div class="brand-icon" title="NER — North Eastern Region" style="padding:0; overflow:hidden; background:none; box-shadow:none;">
+        <img src="/ner-logo.png" alt="NER — North Eastern Region" style="width:100%; height:100%; object-fit:contain; border-radius:12px;"/>
       </div>
 
       <div>
@@ -357,15 +357,6 @@ app.innerHTML = `
 
       <button
         class="nav-item"
-        data-section="alerts"
-      >
-        <span>⚠</span>
-        <span>Alerts</span>
-      </button>
-
-
-      <button
-        class="nav-item"
         data-section="field-reports"
       >
         <span>▣</span>
@@ -386,6 +377,14 @@ app.innerHTML = `
         SYSTEM
       </div>
 
+
+      <button
+        class="nav-item"
+        data-section="sms-alerts"
+      >
+        <span>📶</span>
+        <span>SMS Alerts</span>
+      </button>
 
       <button
         class="nav-item"
@@ -703,8 +702,8 @@ app.innerHTML = `
           <!-- 2D / 3D RISK HEATMAP PILL SWITCHER -->
           <div class="sim-viewmode-pills" id="overviewViewmodePills">
             <button class="viewmode-btn" data-overview-mode="2d">2D</button>
-            <button class="viewmode-btn active viewmode-heatmap-btn" data-overview-mode="heatmap3d" title="3D Topographic Risk Heatmap">
-              <span class="heatmap-btn-icon">🌋</span> 3D Risk Heatmap
+            <button class="viewmode-btn active viewmode-heatmap-btn" data-overview-mode="heatmap3d" title="Road Connectivity Risk Heatmap">
+              <span class="heatmap-btn-icon">🛣️</span> Road Connectivity Risk
             </button>
           </div>
 
@@ -730,14 +729,14 @@ app.innerHTML = `
           <!-- HYPSOMETRIC RISK COLORMAP LEGEND (3D Heatmap Mode) -->
           <div class="sim-heatmap-legend" id="overviewHeatmapLegend">
             <div class="heatmap-legend-title">
-              <span>Topographic Hazard Heatmap</span>
-              <span class="text-amber-400 font-mono text-xs" style="color:#f59e0b; font-family:monospace; font-size:10px;">FoS &lt; 1.0</span>
+              <span>Road Connectivity Risk Heatmap</span>
+              <span class="text-amber-400 font-mono text-xs" style="color:#f59e0b; font-family:monospace; font-size:10px;">ML GBDT</span>
             </div>
             <div class="heatmap-legend-bar"></div>
             <div class="heatmap-legend-labels">
-              <span>Valley (&lt;1000m)</span>
-              <span>Mid-Slope</span>
-              <span>Peak Crest (&gt;2400m)</span>
+              <span>Stable</span>
+              <span>Watch</span>
+              <span>Critical</span>
             </div>
           </div>
 
@@ -1162,6 +1161,19 @@ app.innerHTML = `
     <section id="section-simulation" style="display: none; width: 100%; min-height: 100vh;"></section>
 
     <section id="section-video-studio" style="display: none; width: 100%; min-height: 100vh;"></section>
+
+    <!-- SMS ALERTS COMMAND TAB — all SMS/early-warning broadcast tooling lives here -->
+    <section id="section-sms-alerts" style="display: none; width: 100%; min-height: 100vh; padding: 6px 2px;">
+      <div class="sms-tab-header" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap;">
+        <div>
+          <div class="region-label" style="margin-bottom:4px;">EARLY WARNING BROADCAST</div>
+          <h1 style="font-size:24px; font-weight:800; letter-spacing:-0.4px;">SMS Alert Command Center</h1>
+        </div>
+        <button id="smsTabSendBtn" class="btn-danger-glow" title="Compose and broadcast an emergency SMS">📲 Send Alert Now (SMS)</button>
+      </div>
+      <div id="sms-settings-container"></div>
+      <div id="sms-audit-container" style="margin-top:20px;"></div>
+    </section>
 
   </main>
 
@@ -1825,7 +1837,7 @@ function addHeatmapLayers() {
             onclick="window.focusOverview3DHeatmap([${e.lngLat.lng}, ${e.lngLat.lat}], '${props.name.replace(/'/g, "\\'")}')"
             style="width:100%; margin-top:6px; padding:8px 12px; background:linear-gradient(135deg, #ea580c, #dc2626); border:none; border-radius:6px; color:#fff; font-weight:800; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 12px rgba(220, 38, 38, 0.4); transition:all 0.2s;"
           >
-            <span>🌋</span> View in 3D Risk Heatmap
+            <span>🛣️</span> View in Road Connectivity Risk
           </button>
         </div>
       `)
@@ -2275,9 +2287,35 @@ function generateHypsometricHeatmapDataURL() {
   return generateHypsometricHeatmapCanvas().toDataURL();
 }
 
-function addOverview3DHeatmapAndContours() {
-  updateOverview3DHeatmapBounds(current3DFocusOrigin);
-  updateOverviewContourLines(current3DFocusOrigin);
+function addOverview3DHeatmapAndContours() {    updateOverview3DHeatmapBounds(current3DFocusOrigin);
+    updateOverviewContourLines(current3DFocusOrigin);
+    refreshOverviewDataDrivenHeatmap(current3DFocusOrigin);
+}
+
+import { computeSusceptibilityHeatmap } from './modules/susceptibility-heatmap.js';
+
+/**
+ * REAL data-driven heatmap for the Risk Map tab: fetches DEM + live rain and
+ * scores the grid through the trained GBDT, then drapes it over the focus
+ * origin. Falls back silently to the demo gradient on network failure.
+ */
+async function refreshOverviewDataDrivenHeatmap(origin = current3DFocusOrigin) {
+  try {
+    const [lon, lat] = origin;
+    const result = await computeSusceptibilityHeatmap({ lat, lon, spanLat: 0.075, spanLon: 0.090 });
+    if (!map || !map.getSource('heatmap-3d-raster-src')) return;
+    const bounds = [
+      [lon - 0.045, lat + 0.0375],
+      [lon + 0.045, lat + 0.0375],
+      [lon + 0.045, lat - 0.0375],
+      [lon - 0.045, lat - 0.0375]
+    ];
+    const src = map.getSource('heatmap-3d-raster-src');
+    src.updateImage({ image: result.canvas, coordinates: bounds });
+    map.triggerRepaint();
+  } catch (e) {
+    console.warn('[overview-heatmap] data-driven refresh failed:', e?.message);
+  }
 }
 
 function updateOverview3DHeatmapBounds(origin = current3DFocusOrigin) {
@@ -2516,6 +2554,7 @@ function setupOverviewModeButtons() {
 }
 
 window.focusOverview3DHeatmap = function(lngLat, name) {
+  refreshOverviewDataDrivenHeatmap(lngLat);
   if (Array.isArray(lngLat) && lngLat.length === 2) {
     current3DFocusOrigin = lngLat;
     setMapMode('heatmap3d');
@@ -2592,7 +2631,7 @@ function setMapMode(mode) {
       duration: 1200
     });
 
-    updateGISStatus('🌋 3D TOPOGRAPHIC HAZARD HEATMAP • FOS < 1.0 ACTIVE');
+    updateGISStatus('🛣️ ROAD CONNECTIVITY RISK HEATMAP • ML SUSCEPTIBILITY ACTIVE');
     return;
   }
 
@@ -4678,6 +4717,20 @@ document
           const section =
             button.dataset.section
 
+          if (section === 'sms-alerts') {
+            // Dedicated tab: show ONLY the SMS section, hide the overview.
+            document.querySelectorAll('.main-content > section:not(#section-sms-alerts):not(#section-simulation):not(#section-video-studio), .main-content > header, .main-content > div:not(#section-sms-alerts):not(#section-simulation):not(#section-video-studio), .main-content > footer').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.main-content > #section-simulation, .main-content > #section-video-studio').forEach(el => el.style.display = 'none');
+            const smsEl = document.getElementById('section-sms-alerts');
+            if (smsEl) {
+              smsEl.style.display = 'block';
+              // Re-render on every visit so fresh history/contacts appear.
+              setupSettingsUI();
+              fetchAndRenderAlertHistory();
+            }
+            return;
+          }
+
           if (section === 'simulation' || section === 'video-studio') {
             document.querySelectorAll('.main-content > section:not(#section-simulation):not(#section-video-studio), .main-content > header, .main-content > div:not(#section-simulation):not(#section-video-studio), .main-content > footer').forEach(el => el.style.display = 'none');
             const simEl = document.getElementById('section-simulation');
@@ -4695,11 +4748,13 @@ document
             }
             return;
           } else {
-            document.querySelectorAll('.main-content > section:not(#section-simulation):not(#section-video-studio), .main-content > header, .main-content > div:not(#section-simulation):not(#section-video-studio), .main-content > footer').forEach(el => el.style.display = '');
+            document.querySelectorAll('.main-content > section:not(#section-sms-alerts):not(#section-simulation):not(#section-video-studio), .main-content > header, .main-content > div:not(#section-sms-alerts):not(#section-simulation):not(#section-video-studio), .main-content > footer').forEach(el => el.style.display = '');
             const simEl = document.getElementById('section-simulation');
             const vsEl = document.getElementById('section-video-studio');
+            const smsEl = document.getElementById('section-sms-alerts');
             if (simEl) simEl.style.display = 'none';
             if (vsEl) vsEl.style.display = 'none';
+            if (smsEl) smsEl.style.display = 'none';
           }
 
           if (
@@ -4816,17 +4871,10 @@ document
     'click',
     () => {
 
-      alert(
-
-        'ARAVINDHA Alert Center\n\n' +
-
-        'No fabricated emergency alerts are generated. ' +
-
-        'Validated alerts will appear when configured ' +
-
-        'real-data thresholds are crossed.'
-
-      )
+      // Route to the dedicated SMS Alert Command Center tab
+      document
+        .querySelector('[data-section="sms-alerts"]')
+        ?.click()
 
     }
   )

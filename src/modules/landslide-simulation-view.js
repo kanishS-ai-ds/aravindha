@@ -6,6 +6,7 @@
 import * as maplibregl from 'maplibre-gl';
 import { REGIONAL_PRESETS, generateHazardGeoJSON } from './landslide-simulation-engine.js';
 import { fetchRoadsForBbox } from './road-network.js';
+import { computeSusceptibilityHeatmap } from './susceptibility-heatmap.js';
 
 export class Landslide3DView {
   constructor(containerId, initialRegion = 'nilgiris') {
@@ -133,11 +134,17 @@ export class Landslide3DView {
         this._roadsSetup = true;
         this.setupRealRoads();
       }
+      // Real ML heatmap doesn't need satellite tiles — start scoring early.
+      if (!this._mlHeatmapStarted) {
+        this._mlHeatmapStarted = true;
+        this.refreshDataDrivenHeatmap();
+      }
     });
 
     this.map.on('load', () => {
       this.setupContourOverlay();
       this.setupHeatmap3DLayers();
+      this.refreshDataDrivenHeatmap();
       this.enableHeatmap3DMode();
       this.setupSpatialMarkers();
       this.setupAreaNameLabels();
@@ -1107,6 +1114,101 @@ export class Landslide3DView {
   }
 
   /**
+   * REAL data-driven heatmap: DEM + slope + live rainfall scored through the
+   * trained GBDT. Replaces the decorative radial demo canvas on the same
+   * 'heatmap-3d-raster-src' source, so all existing toggle code keeps working.
+   * @param {{lat?: number, lon?: number}} opts optional explicit centre
+   */
+  async refreshDataDrivenHeatmap(opts = null) {
+    try {
+      const preset = this.getCurrentPreset();
+      // coords.origin is GeoJSON-ordered [lon, lat] — swapping these sent the
+      // fetch to the Norwegian Sea (flat ocean voids) instead of the site.
+      const oLon = preset.coords.origin[0];
+      const oLat = preset.coords.origin[1];
+      const lat = opts && opts.lat != null ? opts.lat : oLat;
+      const lon = opts && opts.lon != null ? opts.lon : oLon;
+      const result = await computeSusceptibilityHeatmap({
+        lat, lon,
+        spanLat: 0.075, spanLon: 0.090,
+        onProgress: (p, stage) => {
+          const el = document.getElementById('sim-heatmap-status');
+          if (el) el.textContent = stage === 'DEM' ? `Terrain ${Math.round(p * 100)}%` : `ML scoring…`;
+        },
+      });
+      const bounds = [
+        [lon - 0.045, lat + 0.0375],
+        [lon + 0.045, lat + 0.0375],
+        [lon + 0.045, lat - 0.0375],
+        [lon - 0.045, lat - 0.0375],
+      ];
+      const applyImage = () => {
+        const src = this.map.getSource('heatmap-3d-raster-src');
+        if (!src) return false;
+        src.updateImage({ image: result.canvas, coordinates: bounds });
+        return true;
+      };
+
+      if (!this.map.getSource('heatmap-3d-raster-src')) {
+        // Style parsed but 'load' still pending (slow tiles) — create the
+        // layer ourselves so the ML surface isn't blocked by tile downloads.
+        try {
+          this.map.addSource('heatmap-3d-raster-src', {
+            type: 'image',
+            url: result.canvas.toDataURL(),
+            coordinates: bounds
+          });
+          this.map.addLayer({
+            id: 'heatmap-3d-raster-layer',
+            type: 'raster',
+            source: 'heatmap-3d-raster-src',
+            layout: { visibility: 'visible' },
+            paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 }
+          });
+        } catch {
+          // Style not parsed yet — retry once it is.
+          this.map.once('style.load', () => this.refreshDataDrivenHeatmap({ lat, lon }));
+          return;
+        }
+      }
+
+      if (applyImage()) {
+        // Sanity guard: a stalled DEM tile download yields a flat all-zero
+        // grid. Retry once so a transient network stall doesn't leave a
+        // blank/meaningless heatmap drape.
+        const flat = (result.stats.maxElev - result.stats.minElev) < 1;
+        const empty = result.stats.max <= 0.001;
+        if ((flat || empty) && !this._heatmapRetried) {
+          this._heatmapRetried = true;
+          setTimeout(() => this.refreshDataDrivenHeatmap({ lat, lon }), 4000);
+          return;
+        }
+        this._heatmapRetried = false;
+        this._lastHeatmapStats = result.stats;
+        const el = document.getElementById('sim-heatmap-status');
+        if (el) el.textContent = `ML model · mean ${(result.stats.mean * 100).toFixed(0)}% · peak ${(result.stats.max * 100).toFixed(0)}% · rain ${Math.round(result.rain.rain_15d)} mm/15d`;
+        this.map.triggerRepaint();
+      }
+    } catch (e) {
+      console.warn('[heatmap] data-driven refresh failed, demo gradient stays:', e?.message);
+      // Self-heal: the failure is usually a transient DEM-tile stall while
+      // satellite tiles hog bandwidth. Retry when the network goes quiet.
+      if (!this._heatmapHealHooked) {
+        this._heatmapHealHooked = true;
+        const retry = () => {
+          if (this._lastHeatmapStats) return;
+          this._heatmapHealHooked = false;
+          this.refreshDataDrivenHeatmap();
+        };
+        if (navigator.connection) {
+          navigator.connection.addEventListener('change', retry, { once: true });
+        }
+        setTimeout(retry, 45000); // unconditional slow fallback
+      }
+    }
+  }
+
+  /**
    * Setup 3D Topographic Risk Heatmap Layers
    * Bounds are anchored to preset.coords.origin so the red hot-spot sits
    * exactly on the landslide slip crown for EVERY region.
@@ -1415,6 +1517,10 @@ export class Landslide3DView {
       this.setupHeatmap3DLayers();
     }
     this.map.triggerRepaint();
+
+    // Swap the placeholder gradient for the REAL ML-scored susceptibility
+    // surface for the clicked location (DEM + live rain + trained GBDT).
+    this.refreshDataDrivenHeatmap({ lat: cLat, lon: cLon });
 
     // 2. Enable 3D Heatmap mode and relief
     this.enableHeatmap3DMode();
