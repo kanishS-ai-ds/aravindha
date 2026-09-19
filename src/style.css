@@ -3997,3 +3997,11 @@ button { accent-color: #f59e0b; }
   height: 100%;
   display: block;
 }
+
+/* ========================================================= */
+/* CLICKABLE STAT CARDS — EARTHQUAKE LOCATE                  */
+/* ========================================================= */
+.stat-card.clickable { cursor: pointer; }
+.stat-card.clickable:hover { border-color: var(--amber); }
+.stat-card.clickable:hover .stat-icon { transform: scale(1.15); }
+.stat-card.clickable .stat-icon { transition: transform 0.2s ease; }

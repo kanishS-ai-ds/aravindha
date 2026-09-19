@@ -357,15 +357,6 @@ app.innerHTML = `
 
       <button
         class="nav-item"
-        data-section="field-reports"
-      >
-        <span>▣</span>
-        <span>Field Reports</span>
-      </button>
-
-
-      <button
-        class="nav-item"
         data-section="analytics"
       >
         <span>◫</span>
@@ -633,7 +624,7 @@ app.innerHTML = `
 
       <!-- EARTHQUAKE -->
 
-      <div class="stat-card">
+      <div class="stat-card clickable" id="earthquakeCard" title="Show these earthquakes on the hazard map">
 
         <div class="stat-header">
 
@@ -660,7 +651,7 @@ app.innerHTML = `
           class="stat-footer"
           id="earthquakeStatus"
         >
-          USGS — past 24h
+          USGS — past 24h · click to locate
         </div>
 
       </div>
@@ -1063,7 +1054,7 @@ app.innerHTML = `
 
       <!-- ROADS -->
 
-      <div class="panel connectivity-panel">
+      <div class="panel connectivity-panel" style="grid-column: 1 / -1;">
 
         <div class="panel-header">
 
@@ -1094,12 +1085,39 @@ app.innerHTML = `
           Loading real OpenStreetMap road data...
         </div>
 
-      </div>
+      </div>    </section>
 
+
+    <footer>
+
+      <strong>
+        ARAVINDHA
+      </strong>
+
+      — Advanced Risk Assessment and Vulnerability
+      Indicator for Natural Disaster Hazard Analysis
+
+    </footer>
+
+    <section id="section-simulation" style="display: none; width: 100%; min-height: 100vh;"></section>
+
+    <section id="section-video-studio" style="display: none; width: 100%; min-height: 100vh;"></section>
+
+    <!-- SMS ALERTS COMMAND TAB — all SMS/early-warning broadcast tooling lives here -->
+    <section id="section-sms-alerts" style="display: none; width: 100%; min-height: 100vh; padding: 6px 2px;">
+      <div class="sms-tab-header" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap;">
+        <div>
+          <div class="region-label" style="margin-bottom:4px;">EARLY WARNING BROADCAST</div>
+          <h1 style="font-size:24px; font-weight:800; letter-spacing:-0.4px;">SMS Alert Command Center</h1>
+        </div>
+        <button id="smsTabSendBtn" class="btn-danger-glow" title="Compose and broadcast an emergency SMS">📲 Send Alert Now (SMS)</button>
+      </div>
+      <div id="sms-settings-container"></div>
+      <div id="sms-audit-container" style="margin-top:20px;"></div>
 
       <!-- FIELD REPORTS -->
 
-      <div class="panel field-panel">
+      <div class="panel field-panel" style="margin-top:20px;">
 
         <div class="panel-header">
 
@@ -1129,11 +1147,9 @@ app.innerHTML = `
             ▣
           </div>
 
-
           <strong>
             No field reports available
           </strong>
-
 
           <span>
             Reports will appear here when submitted
@@ -1143,36 +1159,6 @@ app.innerHTML = `
         </div>
 
       </div>
-
-    </section>
-
-
-    <footer>
-
-      <strong>
-        ARAVINDHA
-      </strong>
-
-      — Advanced Risk Assessment and Vulnerability
-      Indicator for Natural Disaster Hazard Analysis
-
-    </footer>
-
-    <section id="section-simulation" style="display: none; width: 100%; min-height: 100vh;"></section>
-
-    <section id="section-video-studio" style="display: none; width: 100%; min-height: 100vh;"></section>
-
-    <!-- SMS ALERTS COMMAND TAB — all SMS/early-warning broadcast tooling lives here -->
-    <section id="section-sms-alerts" style="display: none; width: 100%; min-height: 100vh; padding: 6px 2px;">
-      <div class="sms-tab-header" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap;">
-        <div>
-          <div class="region-label" style="margin-bottom:4px;">EARLY WARNING BROADCAST</div>
-          <h1 style="font-size:24px; font-weight:800; letter-spacing:-0.4px;">SMS Alert Command Center</h1>
-        </div>
-        <button id="smsTabSendBtn" class="btn-danger-glow" title="Compose and broadcast an emergency SMS">📲 Send Alert Now (SMS)</button>
-      </div>
-      <div id="sms-settings-container"></div>
-      <div id="sms-audit-container" style="margin-top:20px;"></div>
     </section>
 
   </main>
@@ -3125,7 +3111,7 @@ async function loadEarthquakes() {
     ) {
 
       earthquakeStatus.textContent =
-        'USGS — past 24h'
+        'USGS — past 24h · click to locate'
 
     }
 
@@ -3172,6 +3158,60 @@ async function loadEarthquakes() {
   }
 
 }
+
+
+/* =========================================================
+   EARTHQUAKE CARD → LOCATE ON HAZARD MAP
+========================================================= */
+
+document.querySelector('#earthquakeCard')?.addEventListener('click', () => {
+
+  if (!map) return
+
+  // Switch to the Overview map if another tab is showing
+  const overviewNav = document.querySelector('[data-section="overview"]')
+  if (overviewNav && !overviewNav.classList.contains('active')) overviewNav.click()
+
+  if (!earthquakeFeatures.length) {
+    updateGISStatus('No earthquakes in the NER in the past 24h')
+    return
+  }
+
+  // Fit the map to all quake locations
+  const bounds = new maplibregl.LngLatBounds()
+  earthquakeFeatures.forEach(f => {
+    const c = f.geometry.coordinates
+    if (c) bounds.extend([Number(c[0]), Number(c[1])])
+  })
+
+  map.fitBounds(bounds, {
+    padding: 120,
+    maxZoom: 9,
+    duration: 1600
+  })
+
+  // Open a popup on the strongest quake
+  const strongest = earthquakeFeatures.reduce((best, f) =>
+    (Number(f.properties?.mag) || 0) > (Number(best.properties?.mag) || 0) ? f : best
+  )
+  const c = strongest.geometry.coordinates
+  const mag = strongest.properties?.mag !== undefined ? Number(strongest.properties.mag).toFixed(1) : 'N/A'
+  const time = strongest.properties?.time ? new Date(Number(strongest.properties.time)).toLocaleString('en-IN') : 'Unknown'
+
+  setTimeout(() => {
+    new maplibregl.Popup({ offset: 14 })
+      .setLngLat([Number(c[0]), Number(c[1])])
+      .setHTML(`
+        <strong>◉ Strongest quake (M ${mag})</strong><br>
+        ${strongest.properties?.place || 'NER region'}<br>
+        <small>${time}</small>
+      `)
+      .addTo(map)
+  }, 1700)
+
+  updateGISStatus(`Locating ${earthquakeFeatures.length} USGS earthquake(s) — past 24h`)
+
+})
 
 
 /* =========================================================
@@ -4797,25 +4837,6 @@ document
 
           if (
             section ===
-            'field-reports'
-          ) {
-
-            document
-              .querySelector(
-                '.field-panel'
-              )
-              ?.scrollIntoView({
-
-                behavior:
-                  'smooth'
-
-              })
-
-          }
-
-
-          if (
-            section ===
             'alerts'
           ) {
 
@@ -4926,6 +4947,14 @@ loadNASAEvents()
 
 loadRoadConnectivity()
 
+// Field Reports live in the SMS Alerts tab — refresh data only while that tab is visible
+import { fetchAndRenderFieldReports } from './modules/field-reports.js'
+setInterval(() => {
+  if (document.getElementById('section-sms-alerts')?.style.display !== 'none') {
+    fetchAndRenderFieldReports()
+  }
+}, 10000)
+
 
 /* =========================================================
    AUTO REFRESH
@@ -4977,7 +5006,7 @@ import { LandslideDashboardUI } from './modules/landslide-dashboard-ui.js'
 import { VideoStudioUI } from './modules/video-studio-ui.js'
 
 function initAllModules() {
-  initFieldReports(typeof map !== 'undefined' ? map : null)
+  initFieldReports(typeof map !== 'undefined' ? map : null) // renders into .field-panel (SMS Alerts tab) + map pins
   initAlerts()
   initAnalytics()
   initSensorsWebSocket()
