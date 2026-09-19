@@ -181,8 +181,11 @@ function decodeTerrariumPixel(data, i) {
 export async function fetchElevationGrid(bbox, gridRes, onProgress) {
   // z14 keeps ~10 m/px at mid-latitudes — noticeably crisper gullies and
   // spur lines than z13, which smooths away the terrain features that
-  // control where landslides actually initiate.
-  const zoom = pickZoomForArea(bbox, 25, 14)
+  // control where landslides actually initiate. Small areas (≤ ~3 km) get
+  // z15 (~5 m/px) for ridge/sharper-valley detail.
+  const dims = bboxDimensionsMeters(bbox)
+  const maxZ = dims.width <= 3200 ? 15 : 14
+  const zoom = pickZoomForArea(bbox, 12, maxZ)
   const n = Math.pow(2, zoom)
   const x0 = Math.floor(MERCATOR.lonToX(bbox.minLon, zoom))
   const x1 = Math.floor(MERCATOR.lonToX(bbox.maxLon, zoom))
@@ -301,6 +304,8 @@ export async function fetchTextureCanvas(bbox, sizePx, style, onProgress) {
   const pyBottom = MERCATOR.latToY(bbox.minLat, zoom) * TILE_SIZE - y0 * TILE_SIZE
 
   const out = createTileCanvas(sizePx, sizePx)
+  out.ctx.imageSmoothingEnabled = true
+  out.ctx.imageSmoothingQuality = 'high'
   out.ctx.drawImage(
     canvas,
     pxLeft, pyTop, Math.max(1, pxRight - pxLeft), Math.max(1, pyBottom - pyTop),
@@ -437,10 +442,13 @@ export function composeDrape(landcoverCanvas, imageryCanvas, hillshadeCanvas, op
   const ctx = out.ctx
 
   if (imageryCanvas && !opts.imaginationOnly) {
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(imageryCanvas, 0, 0, size, size)
-    // Darken + desaturate slightly for a cinematic look
+    // Light cinematic grade only — heavy darkening hid the imagery detail
+    // that makes close-ups read as real terrain.
     ctx.globalCompositeOperation = 'source-atop'
-    ctx.fillStyle = 'rgba(10, 16, 22, 0.28)'
+    ctx.fillStyle = 'rgba(10, 16, 22, 0.14)'
     ctx.fillRect(0, 0, size, size)
     ctx.globalCompositeOperation = 'source-over'
   } else {
@@ -448,7 +456,9 @@ export function composeDrape(landcoverCanvas, imageryCanvas, hillshadeCanvas, op
   }
 
   if (hillshadeCanvas && opts.hillshade) {
-    ctx.globalAlpha = 0.35
+    // subtle multi-scale relief shading: strengthens ridges/gullies without
+    // flattening the imagery the way a single heavy multiply did
+    ctx.globalAlpha = 0.22
     ctx.globalCompositeOperation = 'multiply'
     ctx.drawImage(hillshadeCanvas, 0, 0)
     ctx.globalAlpha = 1

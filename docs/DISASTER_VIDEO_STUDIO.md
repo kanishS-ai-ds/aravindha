@@ -151,3 +151,20 @@ and produce an evacuation time window.
 - Water rendering is a color-ramp drape + HUD metrics; a refraction/specular
   water shader pass is the next visual upgrade.
 - Narration-style TTS audio track could be muxed in via WebAudio during capture.
+
+## Road-Network Intelligence (added Sep 2026)
+
+Real OSM road networks now flow through the whole pipeline via
+`src/modules/road-network.js` (Overpass API, multi-mirror fallback):
+
+- **Overview tab** — "Road Connectivity" card has a live *Selected-Area Road
+  Network* section: clicking anywhere on the map fetches that area's real road
+  network (roads / km / at-risk / km-exposed KPIs + named road list), with a
+  hazard radius driven by the ensemble risk score.
+- **3D Simulation** — roads render as ribbons on the terrain and turn
+  red/blocked when debris or flood frames intersect them; the sidebar Road
+  Connectivity panel lists affected roads in real time.
+- **Video Studio** — fetched roads drape over the cinematic terrain and the
+  overlay/HUD reports blocked-road counts and cut-off percentages per frame.
+
+Endpoints used: `overpass.kumi.systems`, `overpass-api.de` (POST, UA-tagged).

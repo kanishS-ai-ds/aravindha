@@ -1,0 +1,17 @@
+{
+  "built_at": "2026-09-18T05:00:39.538873Z",
+  "positives": 2438,
+  "negatives": 4876,
+  "skipped_no_features": 0,
+  "elapsed_s": 613.2,
+  "bbox": {
+    "lat_min": 6.5,
+    "lat_max": 36.5,
+    "lon_min": 68.0,
+    "lon_max": 97.5
+  },
+  "years": [
+    2007,
+    2024
+  ]
+}

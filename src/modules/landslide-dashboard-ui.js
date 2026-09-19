@@ -12,6 +12,8 @@ import {
   getInfrastructureImpacts,
   calculateEnsembleRisk
 } from './landslide-simulation-engine.js';
+import { predictLandslideProbability, quickHeuristic } from './ml-client.js';
+import { fetchRoadsForBbox } from './road-network.js';
 
 export class LandslideDashboardUI {
   constructor(targetContainerId) {
@@ -444,6 +446,7 @@ export class LandslideDashboardUI {
                   <span class="donut-val" id="risk-pct-val">78%</span>
                   <span class="donut-level text-red-500 font-bold" id="risk-level-tag">High Risk</span>
                 </div>
+                <span id="risk-donut-ml-source" class="donut-ml-source" title="">🤖 ML: loading…</span>
               </div>
 
               <div class="risk-scale-legend">
@@ -564,6 +567,21 @@ export class LandslideDashboardUI {
           <!-- 5. AFFECTED INFRASTRUCTURE -->
           <div class="analytics-card card-infrastructure">
             <h3 class="card-heading">Affected Infrastructure</h3>
+            <!-- REAL-TIME ROAD CONNECTIVITY (OpenStreetMap) -->
+            <div class="roadnet-panel" id="roadnet-panel">
+              <div class="roadnet-head">
+                <span class="roadnet-title">🛣 Road Connectivity <span class="roadnet-src" id="roadnet-src">OpenStreetMap</span></span>
+                <span class="roadnet-status" id="roadnet-status">loading…</span>
+              </div>
+              <div class="roadnet-kpis">
+                <div class="roadnet-kpi"><strong id="roadnet-total">—</strong><span>roads</span></div>
+                <div class="roadnet-kpi"><strong id="roadnet-km">—</strong><span>km network</span></div>
+                <div class="roadnet-kpi warn"><strong id="roadnet-atrisk">—</strong><span>at risk</span></div>
+              </div>
+              <ul class="roadnet-list" id="roadnet-list">
+                <li class="roadnet-empty">Select a location to load its real road network…</li>
+              </ul>
+            </div>
             <div class="infra-grid">
               
               <div class="infra-item">
@@ -1143,7 +1161,7 @@ export class LandslideDashboardUI {
     });
   }
 
-  handleCustomLocationSelected(info) {
+  async handleCustomLocationSelected(info) {
     const { lng, lat, elevation, slope } = info;
 
     // 1. Update topbar subtitle
@@ -1158,12 +1176,25 @@ export class LandslideDashboardUI {
     const localMoisture = Math.round(78 + seed * 19);
     const localPGA = parseFloat((0.10 + seed * 0.24).toFixed(2));
 
-    // 3. Compute dynamic ensemble risk
-    const ensemble = calculateEnsembleRisk(this.currentRegionKey, localRainfall, localMoisture, localPGA);
+    // 2b. Real-ML probability from the trained GBDT (browser ONNX → API → heuristic)
+    const mlFeatures = {
+      rain_1d: localRainfall,
+      rain_3d: Math.round(localRainfall * 2.2),
+      rain_7d: Math.round(localRainfall * 3.6),
+      rain_15d: Math.round(localRainfall * 5),
+      rain_max_7d: localRainfall,
+      elevation_m: elevation,
+      slope_deg: slope
+    };
+    const mlResult = await predictLandslideProbability(mlFeatures);
+
+    // 3. Compute dynamic ensemble risk (fused with the real model)
+    const ensemble = calculateEnsembleRisk(
+      this.currentRegionKey, localRainfall, localMoisture, localPGA, mlResult.probability);
 
     // 4. Update Donut Gauge
-    const donutVal = document.getElementById('risk-donut-val');
-    const donutLevel = document.getElementById('risk-donut-level');
+    const donutVal = document.getElementById('risk-pct-val');
+    const donutLevel = document.getElementById('risk-level-tag');
     const donutFg = document.getElementById('risk-donut-fg');
 
     if (donutVal) donutVal.innerText = `${ensemble.probabilityPct}%`;
@@ -1176,6 +1207,17 @@ export class LandslideDashboardUI {
       const offset = circ - (circ * ensemble.probabilityPct) / 100;
       donutFg.style.strokeDashoffset = offset;
       donutFg.style.stroke = ensemble.badgeColor;
+    }
+
+    // 4b. ML provenance badge — shows the ensemble is fused with the trained model
+    const mlBadge = document.getElementById('risk-donut-ml-source');
+    if (mlBadge) {
+      const srcLabel = mlResult.source === 'onnx-browser'
+        ? '🤖 Real-ML: GBDT (in-browser ONNX)'
+        : mlResult.source === 'fastapi' ? '🤖 Real-ML: GBDT (FastAPI)'
+        : '🤖 ML: local heuristic fallback';
+      mlBadge.textContent = srcLabel;
+      mlBadge.title = `Model: ${mlResult.model} · pML=${(mlResult.probability * 100).toFixed(1)}% fused at 45% into the ensemble`;
     }
 
     // 5. Update Current Conditions cards
@@ -1206,6 +1248,88 @@ export class LandslideDashboardUI {
     if (alertBox) {
       alertBox.innerText = `3D Topographic Risk Heatmap Active: ${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E (FoS ${ensemble.fos})`;
     }
+
+    // 8. Real-time road connectivity around the selected point (OSM live)
+    this.loadRoadConnectivity(lat, lng, ensemble);
+  }
+
+  /**
+   * Fetch the real road network around the selected location and render the
+   * Road Connectivity panel + compute which roads intersect the modelled
+   * high-hazard zone (slope/FoS-driven radius around the click).
+   */
+  async loadRoadConnectivity(lat, lng, ensemble) {
+    const RISK_KM = 2.5 + (ensemble.probabilityPct / 100) * 4.5; // 2.5–7 km hazard radius
+    const dLat = RISK_KM / 110.54;
+    const dLon = RISK_KM / (111.32 * Math.cos(lat * Math.PI / 180));
+    const bbox = { minLat: lat - dLat, maxLat: lat + dLat, minLon: lng - dLon, maxLon: lng + dLon };
+    const panel = {
+      status: document.getElementById('roadnet-status'),
+      total: document.getElementById('roadnet-total'),
+      km: document.getElementById('roadnet-km'),
+      atrisk: document.getElementById('roadnet-atrisk'),
+      list: document.getElementById('roadnet-list')
+    };
+    if (!panel.list) return;
+    if (panel.status) { panel.status.textContent = 'loading…'; panel.status.className = 'roadnet-status'; }
+
+    // cache per rounded coordinate so re-clicks don't refetch
+    const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+    this._roadCache = this._roadCache || new Map();
+    let net = this._roadCache.get(cacheKey);
+    if (!net) {
+      net = await fetchRoadsForBbox(bbox);
+      this._roadCache.set(cacheKey, net);
+      if (this._roadCache.size > 12) this._roadCache.delete(this._roadCache.keys().next().value);
+    }
+    if (!panel.total) return;
+    panel.total.textContent = net.roads.length;
+    panel.km.textContent = net.totalKm.toFixed(1);
+
+    if (!net.roads.length) {
+      if (panel.status) { panel.status.textContent = 'no road data'; panel.status.className = 'roadnet-status'; }
+      panel.list.innerHTML = '<li class="roadnet-empty">No mapped roads in this area (remote terrain).</li>';
+      const rNum = document.getElementById('infra-roads-num');
+      const rKm = document.getElementById('infra-roads-km');
+      if (rNum) rNum.innerText = '0';
+      if (rKm) rKm.innerText = '(0 km)';
+      return;
+    }
+
+    // Roads at risk = those entering the hazard circle around the click point.
+    const atRisk = [];
+    for (const road of net.roads) {
+      let minD = Infinity;
+      for (const p of road.pts) {
+        const dy = (p.lat - lat) * 110.54;
+        const dx = (p.lon - lng) * 111.32 * Math.cos(lat * Math.PI / 180);
+        const d = Math.hypot(dx, dy);
+        if (d < minD) minD = d;
+      }
+      if (minD <= RISK_KM) atRisk.push({ road, minD });
+    }
+    atRisk.sort((a, b) => a.road.meta.priority - b.road.meta.priority || a.minD - b.minD);
+
+    panel.atrisk.textContent = atRisk.length;
+    if (panel.status) {
+      panel.status.textContent = atRisk.length ? `${atRisk.length} exposed` : 'all clear';
+      panel.status.className = 'roadnet-status ' + (atRisk.length ? 'bad' : 'ok');
+    }
+
+    // Wire the Affected Infrastructure road KPI to REAL numbers now.
+    const rNum = document.getElementById('infra-roads-num');
+    const rKm = document.getElementById('infra-roads-km');
+    if (rNum) rNum.innerText = atRisk.length;
+    if (rKm) rKm.innerText = `(${atRisk.reduce((s, r) => s + r.road.lengthKm, 0).toFixed(1)} km)`;
+
+    const rows = atRisk.slice(0, 7).map(({ road, minD }) => `
+      <li class="roadnet-item ${road.meta.priority <= 2 ? 'major' : ''}">
+        <span class="roadnet-dot" style="background:${'#' + road.meta.color.toString(16).padStart(6, '0')}"></span>
+        <span class="roadnet-name" title="${road.name} (${road.meta.label})">${road.name}</span>
+        <span class="roadnet-meta">${road.lengthKm.toFixed(1)} km · ${minD < 1 ? '<1' : Math.round(minD)} km from point</span>
+        <span class="roadnet-badge">${minD < RISK_KM * 0.45 ? 'DIRECT HIT' : 'AT RISK'}</span>
+      </li>`).join('');
+    panel.list.innerHTML = rows || '<li class="roadnet-empty">No roads within the hazard radius.</li>';
   }
 
   destroy() {

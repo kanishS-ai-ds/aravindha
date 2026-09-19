@@ -6,6 +6,7 @@
  * phrase-by-phrase via t(), so nothing ever renders blank — dictionaries
  * fill in incrementally (see DICTIONARY below).
  */
+import { INDIA_PHRASES } from './i18n-india.js';
 
 export const LANGUAGES = [
   { code: 'en', name: 'English', native: 'English' },
@@ -1279,6 +1280,13 @@ for (const [code, phrases] of Object.entries(SIM_PHRASES)) {
   DICTIONARY[code] = { ...(DICTIONARY[code] || {}), ...phrases };
 }
 
+// Merge the remaining India scheduled-language dictionaries (Odia, Gujarati,
+// Punjabi, Urdu, Sanskrit, Santali, Sindhi, Kashmiri, Konkani, Maithili,
+// Manipuri, Bodo, Dogri) — these had no entries and fell back to English.
+for (const [code, phrases] of Object.entries(INDIA_PHRASES)) {
+  DICTIONARY[code] = { ...(DICTIONARY[code] || {}), ...phrases };
+}
+
 let currentLanguage = localStorage.getItem('aravindha_language') || 'en';
 
 /**
@@ -1427,9 +1435,12 @@ export function setLanguage(nameOrCode) {
     }
   }
 
-  // Walk root container
+  // Walk root container — restore English originals first so dynamic nodes
+  // whose cached original was written in a previous non-English language
+  // reset correctly, then apply the new dictionary on top.
   const root = document.querySelector('#app') || document.body;
   if (root) {
+    translateNode(root, {}, true);
     translateNode(root, dict, isEnglish);
   }
 

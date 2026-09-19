@@ -17,6 +17,7 @@
 
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { analyzeRoadBlockage } from './road-network.js'
 
 /* =========================================================
    RENDER MODES
@@ -156,6 +157,10 @@ export class SimViewer3D {
     // --- failure-zone pin marker ------------------------------------------
     this._buildMarker()
 
+    // --- road network (fetched async, added when ready) --------------------
+    this.roadImpact = null
+    this._buildRoadGroup()
+
     this.mounted = true
     this._animate()
     window.addEventListener('resize', this._onResize)
@@ -209,41 +214,68 @@ export class SimViewer3D {
     }
     geo.computeVertexNormals()
 
-    // vertex colors from drape canvas (satellite pixels / analysis tint)
-    let drapeData = null
-    if (drapeCanvas) {
-      const c = document.createElement('canvas')
-      c.width = res; c.height = res
-      const ctx = c.getContext('2d', { willReadFrequently: true })
-      ctx.drawImage(drapeCanvas, 0, 0, res, res)
-      drapeData = ctx.getImageData(0, 0, res, res).data
-    }
-    const colors = new Float32Array(pos.count * 3)
-    for (let i = 0; i < pos.count; i++) {
-      let r, g, b
-      if (drapeData && this.mode !== VIEWER_MODES.ANALYSIS) {
-        r = drapeData[i * 4] / 255
-        g = drapeData[i * 4 + 1] / 255
-        b = drapeData[i * 4 + 2] / 255
-      } else {
-        const rel = (dem.heights[i] - this.minH) / this.relief
-        // hypsometric tint: valley green -> slope brown -> crest grey
-        r = 0.22 + rel * 0.5
-        g = 0.42 + rel * 0.18
-        b = 0.24 + rel * 0.4
-      }
-      colors[i * 3] = r
-      colors[i * 3 + 1] = g
-      colors[i * 3 + 2] = b
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-
     const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
       roughness: 0.93,
       metalness: 0.02,
       flatShading: false
     })
+
+    // FULL-RES satellite drape as a proper texture map — this is the single
+    // biggest realism lever: the old path downsampled the imagery to res²
+    // vertex colours (160²–256² blobs). The texture keeps every pixel of the
+    // 2048px drape, so close-ups show real fields, roads and tree cover.
+    let usedTexture = false
+    if (drapeCanvas && drapeCanvas.width >= 512 && this.mode !== VIEWER_MODES.ANALYSIS) {
+      const tex = new THREE.CanvasTexture(drapeCanvas)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      tex.minFilter = THREE.LinearMipmapLinearFilter
+      tex.magFilter = THREE.LinearFilter
+      tex.generateMipmaps = true
+      mat.map = tex
+      // faint hypsometric tint baked into vertex colours for depth cueing
+      const colors = new Float32Array(pos.count * 3)
+      for (let i = 0; i < pos.count; i++) {
+        const rel = (dem.heights[i] - this.minH) / this.relief
+        const shade = 0.82 + rel * 0.28 // valleys slightly darker, crests brighter
+        colors[i * 3] = shade
+        colors[i * 3 + 1] = shade
+        colors[i * 3 + 2] = shade
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      mat.vertexColors = true
+      usedTexture = true
+    }
+    if (!usedTexture) {
+      // fallback: vertex colours from the drape (or hypsometric tint)
+      let drapeData = null
+      if (drapeCanvas) {
+        const c = document.createElement('canvas')
+        c.width = res; c.height = res
+        const ctx = c.getContext('2d', { willReadFrequently: true })
+        ctx.drawImage(drapeCanvas, 0, 0, res, res)
+        drapeData = ctx.getImageData(0, 0, res, res).data
+      }
+      const colors = new Float32Array(pos.count * 3)
+      for (let i = 0; i < pos.count; i++) {
+        let r, g, b
+        if (drapeData) {
+          r = drapeData[i * 4] / 255
+          g = drapeData[i * 4 + 1] / 255
+          b = drapeData[i * 4 + 2] / 255
+        } else {
+          const rel = (dem.heights[i] - this.minH) / this.relief
+          r = 0.22 + rel * 0.5
+          g = 0.42 + rel * 0.18
+          b = 0.24 + rel * 0.4
+        }
+        colors[i * 3] = r
+        colors[i * 3 + 1] = g
+        colors[i * 3 + 2] = b
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      mat.vertexColors = true
+    }
     this.terrainMesh = new THREE.Mesh(geo, mat)
     this.terrainMesh.receiveShadow = true
     this.terrainMesh.castShadow = true
@@ -364,6 +396,132 @@ export class SimViewer3D {
     this.boulderGroup.visible = false
     this.scene.add(this.boulderGroup)
     this.boulders = []
+  }
+
+  /**
+   * Real road network as 3D ribbons draped on the terrain. Called from
+   * Video Studio after the async Overpass fetch resolves. Each road is a
+   * tube-less ribbon (two triangles per segment) following the DEM surface,
+   * per-vertex colours updated every debris frame: intact class colour →
+   * flashing red once the simulated flow cuts it.
+   */
+  attachRoads(roadNet, simResult) {
+    if (!this.roadGroup || !roadNet || !roadNet.roads.length) return
+    // dispose any previous ribbons (restart with a new area)
+    this._disposeRoads()
+
+    const res = this.dem.res
+    const size = res * this.cell * this.worldScale
+    const half = size / 2
+    const roads = roadNet.roads.slice(0, 260) // sanity cap for GPU
+    this.roadRibbons = []
+
+    for (const road of roads) {
+      const n = road.pts.length
+      const positions = new Float32Array(n * 2 * 3)
+      const colors = new Float32Array(n * 2 * 3)
+      const indices = []
+      const base = new THREE.Color(road.meta.color)
+      const lift = 2.2 // meters above ground so ribbons don't z-fight the drape
+
+      for (let i = 0; i < n; i++) {
+        const p = road.pts[i]
+        const x = (p.lon - this.dem.bbox.minLon) / (this.dem.bbox.maxLon - this.dem.bbox.minLon) * size - half
+        const z = (this.dem.bbox.maxLat - p.lat) / (this.dem.bbox.maxLat - this.dem.bbox.minLat) * size - half
+        const y = (p.h - this.minH) * this.vertScale * this.worldScale + lift
+        // half-width in world units from class width (m)
+        const w = Math.max(0.8, road.meta.width * this.worldScale * 0.5)
+        // direction for the perpendicular offset
+        const pn = road.pts[Math.min(n - 1, i + 1)]
+        const pp = road.pts[Math.max(0, i - 1)]
+        const dx = ((pn.lon - pp.lon) / (this.dem.bbox.maxLon - this.dem.bbox.minLon)) * size
+        const dz = ((pn.lat - pp.lat) / (this.dem.bbox.maxLat - this.dem.bbox.minLat)) * size
+        const len = Math.hypot(dx, dz) || 1
+        const px = (-dz / len) * w
+        const pz = (dx / len) * w
+        positions[i * 6] = x + px; positions[i * 6 + 1] = y; positions[i * 6 + 2] = z + pz
+        positions[i * 6 + 3] = x - px; positions[i * 6 + 4] = y; positions[i * 6 + 5] = z - pz
+        colors[i * 6] = base.r; colors[i * 6 + 1] = base.g; colors[i * 6 + 2] = base.b
+        colors[i * 6 + 3] = base.r; colors[i * 6 + 4] = base.g; colors[i * 6 + 5] = base.b
+        if (i < n - 1) {
+          const a = i * 2
+          indices.push(a, a + 1, a + 3, a, a + 3, a + 2)
+        }
+      }
+
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      geo.setIndex(indices)
+      geo.computeVertexNormals()
+      const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.92 })
+      const mesh = new THREE.Mesh(geo, mat)
+      mesh.renderOrder = 3
+      mesh.frustumCulled = false
+      this.roadGroup.add(mesh)
+      this.roadRibbons.push({ mesh, road, base, colors: geo.attributes.color })
+    }
+
+    // blockage timeline against the physics frames
+    if (simResult && (simResult.frameHeights || simResult.frameDepths)) {
+      const frames = simResult.frameHeights || simResult.frameDepths
+      this.roadImpact = analyzeRoadBlockage(roads, this.dem, frames, this.fieldKind === 'flood' ? 'flood' : 'landslide')
+      this.roadNet = { ...roadNet, roads }
+    }
+    this.roadGroup.visible = true
+  }
+
+  _buildRoadGroup() {
+    this.roadGroup = new THREE.Group()
+    this.roadGroup.visible = false
+    this.scene.add(this.roadGroup)
+    this.roadRibbons = []
+    this.roadImpact = null
+    this.roadNet = null
+    this.marker = new THREE.Group()
+  }
+
+  _disposeRoads() {
+    if (!this.roadGroup) return
+    for (const r of this.roadRibbons || []) {
+      r.mesh.geometry.dispose()
+      r.mesh.material.dispose()
+      this.roadGroup.remove(r.mesh)
+    }
+    this.roadRibbons = []
+    this.roadImpact = null
+  }
+
+  /** Colour the ribbons for the current frame: cut roads turn red (with a
+   *  short amber pre-warning when flow is 60% of the closing depth). */
+  _applyRoadFrame(frameIdx) {
+    if (!this.roadImpact || !this.roadRibbons) return
+    const red = new THREE.Color(0xff3b30)
+    const warn = new THREE.Color(0xff9500)
+    for (const { mesh, road, base, colors } of this.roadRibbons) {
+      const info = this.roadImpact.perRoad.get(road.osmId)
+      let target = base
+      if (info && info.blockedFromFrame != null && frameIdx >= info.blockedFromFrame) {
+        target = red
+      } else if (info && info.maxDepth > road.meta.cutDepth * 0.6) {
+        target = warn // flow approaching the road
+      }
+      // only write when the state flips (cheap: compare a cached flag)
+      if (mesh.userData._state !== (target === red ? 2 : target === warn ? 1 : 0)) {
+        mesh.userData._state = target === red ? 2 : target === warn ? 1 : 0
+        for (let i = 0; i < colors.count; i++) {
+          colors.setXYZ(i, target.r, target.g, target.b)
+        }
+        colors.needsUpdate = true
+      }
+      // blocked roads pulse
+      if (target === red) {
+        const pulse = 0.75 + 0.25 * Math.sin(performance.now() / 180)
+        mesh.material.opacity = 0.65 + 0.35 * pulse
+      } else {
+        mesh.material.opacity = 0.92
+      }
+    }
   }
 
   _buildDust() {
@@ -596,6 +754,7 @@ export class SimViewer3D {
   _applyDebrisFrame(frameIdx) {
     if (!this.frames || !this.frames.length) return
     const f = this.frames[Math.min(this.frames.length - 1, frameIdx)]
+    this._applyRoadFrame(frameIdx)
     const res = this.debrisRes
     const pos = this.debrisMesh.geometry.attributes.position
     const col = this.debrisMesh.geometry.attributes.color
@@ -1052,6 +1211,17 @@ export class SimViewer3D {
         runout: entry?.runoutMeters,
         speed: entry?.peakSpeed
       }
+    }
+    // live road status for the HUD chip
+    if (this.roadImpact && this.roadNet) {
+      const cut = this.roadNet.roads.filter(
+        r => this.roadImpact.perRoad.get(r.osmId)?.blockedFromFrame != null &&
+             Math.floor(this.frameIndex) >= this.roadImpact.perRoad.get(r.osmId).blockedFromFrame
+      )
+      this._hud.roads = `${cut.length}/${this.roadNet.roads.length}`
+      this._hud.roadName = cut.length
+        ? cut.slice().sort((a, b) => a.meta.priority - b.meta.priority)[0].name
+        : null
     }
   }
 

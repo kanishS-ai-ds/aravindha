@@ -1712,6 +1712,23 @@
   text-align: center;
 }
 
+/* Real-ML provenance badge under the risk donut (Option A/B wiring) */
+.donut-ml-source {
+  position: absolute;
+  left: 50%;
+  bottom: -18px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  padding: 2px 8px;
+  pointer-events: auto;
+}
+
 .donut-val {
   font-size: 20px;
   font-weight: 800;
@@ -3728,3 +3745,144 @@ select.vs-3d-btn {
   font-weight: 600;
 }
 
+
+/* ============================================
+   ROAD CONNECTIVITY — Overview panel
+============================================ */
+.roadnet-panel {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.roadnet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.roadnet-title { font-size: 12px; font-weight: 800; color: #e2e8f0; letter-spacing: 0.02em; }
+.roadnet-src { font-size: 9px; font-weight: 600; color: #7dd3fc; background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.3); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+.roadnet-status { font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 999px; color: #94a3b8; }
+.roadnet-status.ok { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+.roadnet-status.bad { color: #f87171; background: rgba(248, 113, 113, 0.12); }
+.roadnet-kpis { display: flex; gap: 8px; margin-bottom: 8px; }
+.roadnet-kpi { flex: 1; text-align: center; background: rgba(30, 41, 59, 0.5); border-radius: 8px; padding: 6px 4px; }
+.roadnet-kpi strong { display: block; font-size: 16px; color: #f1f5f9; font-weight: 800; }
+.roadnet-kpi.warn strong { color: #fbbf24; }
+.roadnet-kpi span { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; }
+.roadnet-list { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow-y: auto; }
+.roadnet-item { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; font-size: 11px; color: #cbd5e1; }
+.roadnet-item:nth-child(odd) { background: rgba(30, 41, 59, 0.35); }
+.roadnet-item.major .roadnet-name { color: #fde68a; font-weight: 700; }
+.roadnet-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 6px currentColor; }
+.roadnet-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roadnet-meta { font-size: 9px; color: #64748b; white-space: nowrap; }
+.roadnet-badge { font-size: 8px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); white-space: nowrap; }
+.roadnet-empty { font-size: 11px; color: #64748b; padding: 8px 6px; font-style: italic; }
+
+/* ROADS chip in the 3D viewer HUD */
+.vs-3d-hud .roads-chip strong { color: #7dd3fc; }
+.vs-3d-hud .roads-chip.roads-cut strong { color: #ff5a4e; animation: roadPulse 0.9s ease-in-out infinite; }
+@keyframes roadPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* Road summary line in the scenario impact panel */
+.vs-impact-roads { margin-top: 8px; padding: 7px 10px; font-size: 11px; color: #cbd5e1; background: rgba(30, 41, 59, 0.5); border-left: 3px solid #38bdf8; border-radius: 4px; }
+.vs-impact-roads .roads-blocked { color: #f87171; }
+.vs-impact-roads .roads-ok { color: #4ade80; }
+
+/* ============================================================
+   OVERVIEW: LIVE SELECTED-AREA ROAD NETWORK PANEL
+   ============================================================ */
+.overview-road-live {
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  background: rgba(2, 132, 199, 0.06);
+  border: 1px solid rgba(2, 132, 199, 0.25);
+  border-radius: 10px;
+}
+.overview-road-live .orl-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.overview-road-live .orl-head strong {
+  font-size: 11px;
+  color: var(--text);
+}
+.orl-status {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+}
+.orl-status.ok { color: #4ade80; }
+.orl-status.bad { color: #f87171; }
+.orl-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.orl-kpi {
+  background: rgba(148, 163, 184, 0.07);
+  border-radius: 8px;
+  padding: 6px 4px;
+  text-align: center;
+}
+.orl-kpi strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text);
+}
+.orl-kpi span {
+  font-size: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.orl-kpi.warn strong { color: #fbbf24; }
+.orl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.orl-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  padding: 4px 6px;
+  background: rgba(148, 163, 184, 0.05);
+  border-radius: 6px;
+}
+.orl-item.major {
+  border-left: 2px solid #f59e0b;
+}
+.orl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.orl-name {
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
+}
+.orl-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+.orl-empty {
+  font-size: 10px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 4px 2px;
+}

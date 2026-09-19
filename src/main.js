@@ -3,6 +3,7 @@ import Chart from 'chart.js/auto'
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { REGIONAL_PRESETS } from './modules/landslide-simulation-engine.js'
+import { fetchRoadsForBbox, identifyAffectedRoads } from './modules/road-network.js'
 
 
 /* =========================================================
@@ -1863,6 +1864,13 @@ function addHeatmapLayers() {
 
     const [lng, lat] = [e.lngLat.lng, e.lngLat.lat];
     window.focusOverview3DHeatmap([lng, lat], `Point [${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E]`);
+
+    // LIVE ROAD CONNECTIVITY for the clicked area — real OSM network + hazard
+    // blockage analysis, rendered in the Overview "Road Connectivity" panel.
+    if (typeof window.updateOverviewRoadLive === 'function') {
+      window.updateOverviewRoadLive(lat, lng);
+    }
+
 
     new maplibregl.Popup({ maxWidth: '300px', closeButton: true })
       .setLngLat(e.lngLat)
@@ -4489,6 +4497,82 @@ function calculateLandslideRisk() {
    ROAD CONNECTIVITY (OPENSTREETMAP INFRASTRUCTURE)
 ========================================================= */
 
+/**
+ * LIVE SELECTED-AREA ROAD NETWORK (Overview panel).
+ * Fetches the real OSM road network around the user-clicked coordinate and
+ * renders KPIs + a blockage-risk list in the Road Connectivity card.
+ */
+window.updateOverviewRoadLive = async function(lat, lng) {
+  const statusEl = document.getElementById('orl-status')
+  const kpisEl = document.getElementById('orl-kpis')
+  const listEl = document.getElementById('orl-list')
+  if (!statusEl || !kpisEl || !listEl) return
+
+  const riskKm = window.__lastEnsembleProbPct != null
+    ? 2.5 + (window.__lastEnsembleProbPct / 100) * 4.5
+    : 4.0 // default hazard radius until the ensemble score lands
+
+  statusEl.textContent = 'fetching OSM network…'
+  statusEl.className = 'orl-status'
+
+  const dLat = riskKm / 110.54
+  const dLon = riskKm / (111.32 * Math.cos(lat * Math.PI / 180))
+  const bbox = { minLat: lat - dLat, maxLat: lat + dLat, minLon: lng - dLon, maxLon: lng + dLon }
+
+  try {
+    const net = await fetchRoadsForBbox(bbox)
+    if (!net.roads.length) {
+      statusEl.textContent = 'no mapped roads here (remote terrain)'
+      kpisEl.innerHTML = ''
+      listEl.innerHTML = '<li class="orl-empty">This area has no OpenStreetMap roads — likely remote wilderness.</li>'
+      return
+    }
+
+    const hazard = { lat, lng, radiusKm: riskKm }
+    const affectedAll = identifyAffectedRoads(net, hazard)
+    // Overpass returns way segments that share a name — dedupe for display,
+    // keeping the longest segment's length per name.
+    const byName = new Map()
+    for (const item of affectedAll) {
+      const key = item.road.name
+      const prev = byName.get(key)
+      if (!prev || item.road.lengthKm > prev.road.lengthKm) byName.set(key, item)
+    }
+    const affected = [...byName.values()]
+    const atRiskKm = affectedAll.reduce((s, r) => s + r.road.lengthKm, 0)
+    const totalKm = net.totalKm
+    const cutPct = totalKm > 0 ? (atRiskKm / totalKm) * 100 : 0
+
+    statusEl.textContent = affected.length
+      ? `${affected.length} road${affected.length > 1 ? 's' : ''} in hazard zone`
+      : 'network clear of hazard zone'
+    statusEl.className = 'orl-status ' + (affected.length ? 'bad' : 'ok')
+
+    kpisEl.innerHTML = `
+      <div class="orl-kpi"><strong>${net.roads.length}</strong><span>roads</span></div>
+      <div class="orl-kpi"><strong>${totalKm.toFixed(1)}</strong><span>km total</span></div>
+      <div class="orl-kpi ${affectedAll.length ? 'warn' : ''}"><strong>${affectedAll.length}</strong><span>at risk</span></div>
+      <div class="orl-kpi ${affected.length ? 'warn' : ''}"><strong>${atRiskKm.toFixed(1)}</strong><span>km exposed (${cutPct.toFixed(0)}%)</span></div>
+    `
+
+    listEl.innerHTML = affected.length
+      ? affected.slice(0, 6).map(({ road, distKm }) => `
+          <li class="orl-item ${road.meta.priority <= 2 ? 'major' : ''}">
+            <span class="orl-dot" style="background:#${road.meta.color.toString(16).padStart(6, '0')}"></span>
+            <span class="orl-name" title="${road.name} (${road.meta.label})">${road.name}</span>
+            <span class="orl-meta">${road.lengthKm.toFixed(1)} km · ${distKm < 1 ? '<1' : Math.round(distKm)} km from point</span>
+          </li>
+        `).join('')
+      : '<li class="orl-empty">✓ No roads intersect the modelled hazard radius.</li>'
+
+    console.log(`[overview-road-live] ${net.roads.length} roads / ${totalKm.toFixed(1)} km, ${affected.length} at risk`)
+  } catch (err) {
+    statusEl.textContent = 'road fetch failed — retry on next click'
+    statusEl.className = 'orl-status bad'
+    console.warn('[overview-road-live]', err)
+  }
+}
+
 async function loadRoadConnectivity() {
   const roadContent = document.querySelector('#roadContent')
   const roadStatus = document.querySelector('#roadStatus')
@@ -4515,6 +4599,16 @@ async function loadRoadConnectivity() {
         </div>
       </div>
       <span class="road-badge road-badge-passable">LIVE GIS TELEMETRY</span>
+    </div>
+
+    <!-- LIVE OSM NETWORK AROUND THE USER-SELECTED LOCATION -->
+    <div class="overview-road-live" id="overview-road-live">
+      <div class="orl-head">
+        <strong>📍 Selected-Area Road Network</strong>
+        <span class="orl-status" id="orl-status">select a location on the map…</span>
+      </div>
+      <div class="orl-kpis" id="orl-kpis"></div>
+      <ul class="orl-list" id="orl-list"></ul>
     </div>
 
     <div class="road-list">

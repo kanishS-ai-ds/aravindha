@@ -267,7 +267,7 @@ export function calculateFactorOfSafety(params) {
  * Combines Physics FoS, Random Forest classifier surrogate, and XGBoost regressor
  * Returns calibrated Probability (0-100%) and Uncertainty bounds (+- sigma)
  */
-export function calculateEnsembleRisk(region, rainfall24h, soilMoisture, seismicPGA) {
+export function calculateEnsembleRisk(region, rainfall24h, soilMoisture, seismicPGA, mlProbability = null) {
   const basePreset = REGIONAL_PRESETS[region] || REGIONAL_PRESETS.nilgiris;
 
   // 1. Physics Engine FoS
@@ -285,11 +285,19 @@ export function calculateEnsembleRisk(region, rainfall24h, soilMoisture, seismic
   // Convert FoS to failure probability via logistic sigmoid: P = 1 / (1 + exp(4.8 * (FoS - 1.05)))
   const pPhysics = 1 / (1 + Math.exp(4.8 * (fos - 1.05)));
 
-  // 2. Machine Learning Surrogate (Rainfall intensity-duration threshold + Antecedent Soil Saturation)
-  const rainScore = Math.min(1.0, Math.pow(rainfall24h / 180, 1.4));
-  const moistureScore = Math.min(1.0, Math.pow(soilMoisture / 100, 2.0));
-  const slopeWeight = basePreset.slopeAngle / 45;
-  const pML = Math.min(0.99, (rainScore * 0.45 + moistureScore * 0.35 + slopeWeight * 0.20));
+  // 2. Machine Learning term — real-data GBDT probability when available
+  //    (passed in by async callers via ml-client.js); falls back to the
+  //    local rainfall-threshold surrogate for synchronous paths.
+  let pML, mlSource = 'surrogate';
+  if (typeof mlProbability === 'number' && isFinite(mlProbability)) {
+    pML = Math.min(0.99, Math.max(0.01, mlProbability));
+    mlSource = 'real-ml';
+  } else {
+    const rainScore = Math.min(1.0, Math.pow(rainfall24h / 180, 1.4));
+    const moistureScore = Math.min(1.0, Math.pow(soilMoisture / 100, 2.0));
+    const slopeWeight = basePreset.slopeAngle / 45;
+    pML = Math.min(0.99, (rainScore * 0.45 + moistureScore * 0.35 + slopeWeight * 0.20));
+  }
 
   // 3. Bayesian Ensemble Fusion with Uncertainty
   const weights = { physics: 0.55, ml: 0.45 };
@@ -321,7 +329,8 @@ export function calculateEnsembleRisk(region, rainfall24h, soilMoisture, seismic
     severity,
     badgeColor,
     pPhysics: Math.round(pPhysics * 100),
-    pML: Math.round(pML * 100)
+    pML: Math.round(pML * 100),
+    mlSource
   };
 }
 

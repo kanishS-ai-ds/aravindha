@@ -35,8 +35,15 @@ import {
   INDIA_REGIONS
 } from './video-studio-renderer.js'
 import { SimViewer3D } from './sim-viewer-3d.js'
+import { fetchRoadNetwork, roadStatusSentence } from './road-network.js'
 
-const DEM_GRID_RES = 160
+/** Stable key for a bbox (road fetch caching). */
+function bboxKey(b) {
+  return [b.minLat, b.minLon, b.maxLat, b.maxLon].map(v => v.toFixed(4)).join(',')
+}
+
+const DEM_GRID_RES = 256
+const TEXTURE_SIZE_PX = 2048
 const MAX_AREA_KM2 = 64
 
 export class VideoStudioUI {
@@ -302,6 +309,7 @@ export class VideoStudioUI {
               <span class="chip">RUNOUT <strong id="vs3dHudRunout">—</strong></span>
               <span class="chip">PEAK SPEED <strong id="vs3dHudSpeed">—</strong></span>
               <span class="chip">DEBRIS <strong id="vs3dHudFrame">—</strong></span>
+              <span class="chip roads-chip" id="vs3dHudRoadsChip" title="Roads blocked by the flow (OpenStreetMap)">ROADS <strong id="vs3dHudRoads">—</strong></span>
             </div>
           </div>
 
@@ -844,7 +852,9 @@ export class VideoStudioUI {
       let texture = null
       if (config.useImagery) {
         this.setStageUI('terrain', 0.55, 'Fetching satellite imagery…', 'active')
-        texture = await fetchTextureCanvas(bbox, 1024, 'satellite', (p, label) =>
+        // 2048px texture = ~8× the pixel density of the old 1024 drape; this is
+        // what makes close-up orbit shots read as real terrain instead of mush.
+        texture = await fetchTextureCanvas(bbox, TEXTURE_SIZE_PX, 'satellite', (p, label) =>
           this.setStageUI('terrain', 0.5 + p * 0.45, label, 'active')
         ).catch(() => null)
       }
@@ -873,6 +883,24 @@ export class VideoStudioUI {
         this.setStageUI('render', 0.3, 'Building interactive 3D terrain…', 'active')
         await this.tick()
         this.launchViewer3D(dem, this.drapeCanvas, simResult, config)
+        // Real road network (OSM) — fetched in parallel with mesh build, then
+        // draped as blockage-aware 3D ribbons.
+        if (!this._roadNetPromise || this._roadNetBbox !== bboxKey(bbox)) {
+          this._roadNetBbox = bboxKey(bbox)
+          this._roadNetPromise = fetchRoadNetwork(dem)
+        }
+        this._roadNetPromise
+          .then(net => {
+            if (this.viewer3d && net.roads.length) {
+              this.viewer3d.attachRoads(net, simResult)
+              this.roadNet = this.viewer3d.roadNet
+              this.roadImpact = this.viewer3d.roadImpact
+              this.renderRoadConnectivityPanel()
+              const blocked = this.roadImpact?.blockedCount || 0
+              this.setStageUI('render', 1, `Interactive 3D ready — ${net.roads.length} OSM roads draped, ${blocked} blocked by the flow`, 'done')
+            }
+          })
+          .catch(err => console.warn('[video-studio] road layer skipped:', err))
         this.setStageUI('render', 1, 'Interactive 3D ready — orbit freely, then “Record View” to export', 'done')
         this.setStageUI('export', 1, 'Press “Record View”, orbit through the landslide, stop — then download', 'done')
         this.setStageRail('export')
@@ -1040,6 +1068,12 @@ export class VideoStudioUI {
     set('vs3dHudRunout', hud.runout != null ? `${Math.round(hud.runout)} m` : '—')
     set('vs3dHudSpeed', hud.speed != null ? `${hud.speed.toFixed(1)} m/s` : '—')
     set('vs3dHudFrame', `${Math.floor(v.frameIndex) + 1}/${v.frameCount || 0}`)
+    // live road-connectivity chip
+    if (hud.roads) {
+      set('vs3dHudRoads', hud.roadName ? `${hud.roads} — ${hud.roadName}` : hud.roads)
+      const chip = document.getElementById('vs3dHudRoadsChip')
+      if (chip) chip.classList.toggle('roads-cut', hud.roadName != null)
+    }
   }
 
   async toggleViewer3dRecording() {
@@ -1205,6 +1239,13 @@ export class VideoStudioUI {
         <div><span>Evacuation window</span><strong>${Math.round(impacts.evacuationWindowMin ?? 0)} min</strong></div>
         <div><span>Severity index</span><strong class="sev">${Math.round(impacts.severityPct ?? 0)}%</strong></div>
       </div>
+      ${this.roadImpact && this.roadNet ? `
+      <div class="vs-impact-roads">
+        🛣 <strong>Road network (OpenStreetMap):</strong>
+        ${this.roadNet.roads.length} roads (${this.roadNet.totalKm.toFixed(1)} km) in area —
+        <strong class="${this.roadImpact.blockedCount ? 'roads-blocked' : 'roads-ok'}">${this.roadImpact.blockedCount} blocked</strong>
+        (${this.roadImpact.blockedKm.toFixed(1)} km lost) — ${roadStatusSentence(this.roadImpact, this.roadNet.roads) || 'no cuts'}
+      </div>` : ''}
       <div class="vs-disclaimer">Physics-based indicative estimates from real DEM + rainfall scenario parameters. For planning support, validate against field data.</div>
     `
   }

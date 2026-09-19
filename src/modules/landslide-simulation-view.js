@@ -5,6 +5,7 @@
 
 import * as maplibregl from 'maplibre-gl';
 import { REGIONAL_PRESETS, generateHazardGeoJSON } from './landslide-simulation-engine.js';
+import { fetchRoadsForBbox } from './road-network.js';
 
 export class Landslide3DView {
   constructor(containerId, initialRegion = 'nilgiris') {
@@ -124,8 +125,17 @@ export class Landslide3DView {
       interactive: true
     });
 
+    // style.load fires as soon as the style JSON is parsed — much earlier than
+    // 'load' when satellite/DEM tiles stall on slow networks. Road layers must
+    // exist there so viewport fetches aren't blocked by tile downloads.
+    this.map.on('style.load', () => {
+      if (!this._roadsSetup) {
+        this._roadsSetup = true;
+        this.setupRealRoads();
+      }
+    });
+
     this.map.on('load', () => {
-      this.setupHazardLayers();
       this.setupContourOverlay();
       this.setupHeatmap3DLayers();
       this.enableHeatmap3DMode();
@@ -135,6 +145,7 @@ export class Landslide3DView {
       this.startContinuousSimulationLoop();
       this.setupCoordHUD();
       this.setupMapInteractionHandlers();
+      this.setupRealRoads();
 
       // Refresh heatmap once terrain DEM tiles finish decoding
       setTimeout(() => {
@@ -154,6 +165,68 @@ export class Landslide3DView {
     this.map.on('error', (e) => {
       console.warn('MapLibre GL Notice:', e);
     });
+  }
+
+  /**
+   * REAL ROAD NETWORK (OpenStreetMap) on the overview map.
+   * Fetches the major road network for the current viewport and draws it as
+   * glowing class-coloured lines so “road connectivity” is visible in real
+   * time. Refreshed on moveend (viewport change) with a small bbox guard.
+   */
+  setupRealRoads() {
+    if (!this.map) return;
+    this._roadsViewportKey = null;
+    this.map.addSource('osm-roads-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    this.map.addLayer({
+      id: 'osm-roads-casing', type: 'line', source: 'osm-roads-src',
+      paint: { 'line-color': '#0b1220', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 16, 7], 'line-opacity': 0.85 }
+    });
+    this.map.addLayer({
+      id: 'osm-roads-line', type: 'line', source: 'osm-roads-src',
+      paint: {
+        'line-color': ['match', ['get', 'cls'],
+          'motorway', '#ffd24a', 'trunk', '#ffd24a', 'primary', '#ffb84d',
+          'secondary', '#ffa94d', 'tertiary', '#fff3c4', '#cfe0ee'],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.2, 16, 4.5],
+        'line-opacity': 0.95
+      }
+    });
+    this._refreshRoadsViewport();
+    this.map.on('moveend', () => this._refreshRoadsViewport());
+  }
+
+  async _refreshRoadsViewport() {
+    if (!this.map || !this.map.getSource('osm-roads-src')) {
+      // Source not ready yet (style still parsing) — retry shortly; do NOT wait
+      // for 'idle' because stalled tiles would block it forever.
+      clearTimeout(this._roadsRetryT);
+      this._roadsRetryT = setTimeout(() => this._refreshRoadsViewport(), 2500);
+      return;
+    }
+    const b = this.map.getBounds();
+    const bbox = { minLat: b.getSouth(), minLon: b.getWest(), maxLat: b.getNorth(), maxLon: b.getEast() };
+    const midLat = (bbox.minLat + bbox.maxLat) / 2;
+    const wKm = Math.abs(bbox.maxLon - bbox.minLon) * 111.32 * Math.cos(midLat * Math.PI / 180);
+    const hKm = Math.abs(bbox.maxLat - bbox.minLat) * 110.54;
+    // viewport-key guard: skip duplicate fetches of the same area
+    const key = [bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon].map(v => v.toFixed(2)).join(',');
+    if (key === this._roadsViewportKey) return;
+    // Overpass chokes on huge viewports — only fetch when zoomed to ≤ ~120 km wide
+    if (wKm > 120) return;
+    this._roadsViewportKey = key;
+    try {
+      const net = await fetchRoadsForBbox(bbox);
+      if (key !== this._roadsViewportKey) return; // stale response
+      const features = net.roads.map(r => ({
+        type: 'Feature',
+        properties: { name: r.name, cls: r.class, km: +r.lengthKm.toFixed(2) },
+        geometry: { type: 'LineString', coordinates: r.pts.map(p => [p.lon, p.lat]) }
+      }));
+      this.map.getSource('osm-roads-src')?.setData({ type: 'FeatureCollection', features });
+      console.log(`[overview] OSM roads: ${net.roads.length} / ${net.totalKm.toFixed(1)} km`);
+    } catch (err) {
+      console.warn('[overview] road fetch failed:', err.message);
+    }
   }
 
   /**

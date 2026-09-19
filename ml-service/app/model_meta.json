@@ -1,0 +1,40 @@
+{
+  "rows": 7314,
+  "positives": 2438,
+  "negatives": 4876,
+  "test_rows": 1610,
+  "auc_roc": 0.9685,
+  "average_precision": 0.9354,
+  "brier": 0.0612,
+  "base_rate": 0.3335,
+  "trained_on_real_data": true,
+  "model_version": "v2.0.0-real-coolr-gbdt",
+  "features": [
+    "rain_1d",
+    "rain_3d",
+    "rain_7d",
+    "rain_15d",
+    "rain_max_7d",
+    "elevation_m",
+    "slope_deg",
+    "month_sin",
+    "month_cos"
+  ],
+  "onnx": {
+    "path": "public/model.onnx",
+    "features": [
+      "rain_1d",
+      "rain_3d",
+      "rain_7d",
+      "rain_15d",
+      "rain_max_7d",
+      "elevation_m",
+      "slope_deg",
+      "month_sin",
+      "month_cos"
+    ],
+    "max_abs_error_vs_sklearn": 8.615000157002894e-08,
+    "input": "float32 [1,9]",
+    "output": "float32 [1,1] = P(landslide)"
+  }
+}
