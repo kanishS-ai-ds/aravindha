@@ -342,7 +342,7 @@ app.innerHTML = `
         data-section="simulation"
       >
         <span>🌋</span>
-        <span>3D Simulation</span>
+        <span>Dynamic Analysis</span>
       </button>
 
 
@@ -435,10 +435,6 @@ app.innerHTML = `
 
       <div>
 
-        <div class="region-label">
-          NORTH EASTERN REGION
-        </div>
-
         <h1>
           Disaster Monitoring Command Center
         </h1>
@@ -524,7 +520,7 @@ app.innerHTML = `
         <div class="stat-header">
 
           <span>
-            LANDSLIDE RISK
+            FLASH FLOOD RISK
           </span>
 
           <span class="stat-icon">
@@ -772,7 +768,7 @@ app.innerHTML = `
             </div>
 
             <h2>
-              Landslide Risk
+              Flash Flood Risk
             </h2>
 
           </div>
@@ -1885,7 +1881,7 @@ function addHeatmapLayers() {
             onclick="window.launch3DSimulationForCoordinates([${lng}, ${lat}], 'Custom Analysis Point')"
             style="width:100%; padding:8px 10px; background:linear-gradient(135deg, #0284c7, #0369a1); border:none; border-radius:6px; color:#fff; font-weight:700; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 12px rgba(2, 132, 199, 0.4);"
           >
-            <span>▲</span> Open in 3D Simulation Cockpit
+            <span>▲</span> Open in Dynamic Analysis Cockpit
           </button>
         </div>
       `)

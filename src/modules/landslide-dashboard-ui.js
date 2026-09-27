@@ -65,7 +65,7 @@ export class LandslideDashboardUI {
           </div>
           <div>
             <div class="sim-title-row">
-              <h1 class="sim-main-title">Landslide Risk Monitoring & Simulation</h1>
+              <h1 class="sim-main-title">Flash Flood Risk Monitoring & Simulation</h1>
               <select id="sim-region-selector" class="sim-region-dropdown">
                 <option value="nilgiris" selected>Nilgiris, Tamil Nadu</option>
                 <option value="sikkim">Gangtok & Teesta Valley, Sikkim</option>
@@ -155,7 +155,7 @@ export class LandslideDashboardUI {
                 <label class="layer-item has-sub">
                   <input type="checkbox" id="layer-chk-risk-zones" checked />
                   <span class="layer-icon text-red-500">🔥</span>
-                  <span class="layer-name">Landslide Risk Zones</span>
+                  <span class="layer-name">Flash Flood Risk Zones</span>
                   <span class="layer-sub-caret">›</span>
                 </label>
                 <label class="layer-item has-sub">
@@ -324,9 +324,9 @@ export class LandslideDashboardUI {
         <!-- RIGHT PANEL: ANALYTICS & IMPACT ASSESSOR -->
         <aside class="sim-analytics-sidebar">
           
-          <!-- 1. LANDSLIDE RISK OVERVIEW -->
+          <!-- 1. FLASH FLOOD RISK OVERVIEW -->
           <div class="analytics-card card-risk-overview">
-            <h3 class="card-heading">Landslide Risk Overview</h3>
+            <h3 class="card-heading">Flash Flood Risk Overview</h3>
             <div class="risk-overview-content">
               <div class="risk-radial-box">
                 <svg viewBox="0 0 120 120" class="risk-donut-svg">
