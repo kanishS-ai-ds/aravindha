@@ -293,8 +293,8 @@ app.innerHTML = `
 
     <div class="brand">
 
-      <div class="brand-icon" title="NER — North Eastern Region" style="padding:0; overflow:hidden; background:none; box-shadow:none;">
-        <img src="/ner-logo.png" alt="NER — North Eastern Region" style="width:100%; height:100%; object-fit:contain; border-radius:12px;"/>
+      <div class="brand-icon" title="ARAVINDHA — Disaster Intelligence" style="padding:0; overflow:hidden; background:none; box-shadow:none;">
+        <img src="/ner-logo.png" alt="ARAVINDHA — Disaster Intelligence" style="width:100%; height:100%; object-fit:contain; border-radius:12px;"/>
       </div>
 
       <div>
@@ -493,7 +493,7 @@ app.innerHTML = `
         <span>
           Monitoring rainfall, soil moisture, terrain,
           landslide, earthquake and satellite indicators
-          across NER.
+          across the monitored region.
         </span>
 
       </div>
@@ -676,7 +676,7 @@ app.innerHTML = `
             </div>
 
             <h2>
-              NER Hazard Map
+              Hazard Map
             </h2>
 
           </div>
@@ -3169,7 +3169,7 @@ document.querySelector('#earthquakeCard')?.addEventListener('click', () => {
   if (overviewNav && !overviewNav.classList.contains('active')) overviewNav.click()
 
   if (!earthquakeFeatures.length) {
-    updateGISStatus('No earthquakes in the NER in the past 24h')
+    updateGISStatus('No earthquakes in the monitored region in the past 24h')
     return
   }
 
@@ -3199,7 +3199,7 @@ document.querySelector('#earthquakeCard')?.addEventListener('click', () => {
       .setLngLat([Number(c[0]), Number(c[1])])
       .setHTML(`
         <strong>◉ Strongest quake (M ${mag})</strong><br>
-        ${strongest.properties?.place || 'NER region'}<br>
+        ${strongest.properties?.place || 'Monitored region'}<br>
         <small>${time}</small>
       `)
       .addTo(map)
@@ -3458,7 +3458,7 @@ async function loadRainfall() {
     ) {
 
       rainfallStatus.textContent =
-        'NER mean • Open-Meteo'
+        'Regional mean • Open-Meteo'
 
     }
 
@@ -3920,7 +3920,7 @@ function updateRainfallChart(
             {
 
               label:
-                'NER Mean Precipitation (mm)',
+                'Regional Mean Precipitation (mm)',
 
               data:
                 values,
@@ -4307,7 +4307,7 @@ function calculateLandslideRisk() {
     Soil moisture is displayed and monitored,
     but is NOT yet inserted into the score
     because we do not yet have a validated
-    normalization/threshold model for NER.
+    normalization/threshold model for the region.
   */
 
   if (
