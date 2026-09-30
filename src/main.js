@@ -294,7 +294,7 @@ app.innerHTML = `
     <div class="brand">
 
       <div class="brand-icon" title="ARAVINDHA — Disaster Intelligence" style="padding:0; overflow:hidden; background:none; box-shadow:none;">
-        <img src="/ner-logo.png" alt="ARAVINDHA — Disaster Intelligence" style="width:100%; height:100%; object-fit:contain; border-radius:12px;"/>
+        <img src="/ner-logo.png?v=5" alt="ARAVINDHA — Disaster Intelligence" style="width:100%; height:100%; object-fit:contain; border-radius:12px;"/>
       </div>
 
       <div>
@@ -4868,8 +4868,9 @@ document
     'click',
     () => {
 
+      // Light is the default for every fresh load; the toggle opts into dark.
       document.body.classList.toggle(
-        'light'
+        'dark'
       )
 
     }
